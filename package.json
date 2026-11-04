@@ -1,0 +1,12 @@
+{
+  "name": "casepilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "智能测试设计平台：从需求文档生成测试点和测试用例",
+  "type": "module",
+  "scripts": {
+    "check": "node --check web/app.js && node --check adapters/mock-model.js && node --check src/domain/model-contract.js && node --check src/domain/adapter-contract.js",
+    "start": "python3 -m http.server 4173 --directory web"
+  }
+}
+

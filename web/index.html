@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8fb" />
+    <title>CasePilot · 智能测试设计平台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <div class="brand-mark"><span></span><span></span><span></span></div>
+          <div>
+            <div class="brand-name">casepilot</div>
+            <div class="brand-caption">AI TEST DESIGN</div>
+          </div>
+        </div>
+
+        <div class="workspace-switcher">
+          <div class="workspace-avatar">Q</div>
+          <div class="workspace-copy">
+            <strong>质量工程组</strong>
+            <span>研发空间 · 12 人</span>
+          </div>
+          <span class="chevron">⌄</span>
+        </div>
+
+        <nav class="main-nav" aria-label="主导航">
+          <div class="nav-section-label">工作区</div>
+          <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>工作台</span><em>3</em></button>
+          <button class="nav-item" data-page="projects"><span class="nav-icon">▣</span><span>测试项目</span></button>
+          <button class="nav-item" data-page="library"><span class="nav-icon">◫</span><span>需求库</span></button>
+          <button class="nav-item" data-page="reports"><span class="nav-icon">◒</span><span>质量报告</span></button>
+
+          <div class="nav-section-label nav-label-spaced">管理</div>
+          <button class="nav-item" data-page="templates"><span class="nav-icon">✣</span><span>用例模板</span></button>
+          <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>工作区设置</span></button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="usage-card">
+            <div class="usage-top"><span>本月生成额度</span><strong>68%</strong></div>
+            <div class="progress-track"><div class="progress-fill" style="width: 68%"></div></div>
+            <div class="usage-meta"><span>1,360 / 2,000 条</span><a href="#">升级额度</a></div>
+          </div>
+          <div class="user-profile">
+            <div class="user-avatar">林</div>
+            <div><strong>林小满</strong><span>QA Lead</span></div>
+            <button class="more-button" aria-label="更多选项">•••</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="breadcrumb"><span>工作台</span><i>/</i><strong id="breadcrumb-current">智能生成</strong></div>
+          <div class="topbar-actions">
+            <button class="icon-button" title="搜索">⌕</button>
+            <button class="icon-button notification" title="通知">♧<span></span></button>
+            <div class="topbar-divider"></div>
+            <button class="help-button">? <span>帮助中心</span></button>
+          </div>
+        </header>
+
+        <div class="page-container" id="dashboard-page">
+          <section class="hero-row">
+            <div>
+              <div class="eyebrow"><span class="sparkle">✦</span> AI TEST DESIGNER</div>
+              <h1>把需求，变成可执行的测试。</h1>
+              <p class="hero-subtitle">粘贴需求或设计文档，CasePilot 会帮你拆解测试点、补齐边界场景，并生成团队可直接评审的测试用例。</p>
+            </div>
+            <div class="hero-badge"><div class="hero-badge-icon">✧</div><div><strong>本周已生成</strong><b>286</b><span>条测试用例</span></div></div>
+          </section>
+
+          <section class="generator-grid">
+            <div class="card input-card">
+              <div class="card-header">
+                <div><span class="section-kicker">01 / 输入需求</span><h2>提供一份需求文档</h2></div>
+                <div class="format-pills"><span class="format-pill active">TXT</span><span class="format-pill">MD</span><span class="format-pill">DOCX</span></div>
+              </div>
+              <div class="drop-zone" id="drop-zone">
+                <div class="drop-icon">↥</div>
+                <div class="drop-title">拖拽文件到这里，或 <button id="upload-trigger" class="inline-link">选择文件</button></div>
+                <div class="drop-hint">支持 .txt / .md / .docx，单个文件不超过 10 MB</div>
+                <input type="file" id="file-input" accept=".txt,.md,.docx" hidden />
+              </div>
+              <div class="or-divider"><span>或者直接粘贴内容</span></div>
+              <textarea id="requirement-input" spellcheck="false" placeholder="例如：用户登录功能需要支持手机号和密码登录……"></textarea>
+              <div class="input-footer"><span id="char-count">0 / 20,000</span><button id="sample-btn" class="text-button">填入示例需求 ↗</button></div>
+            </div>
+
+            <div class="card config-card">
+              <div class="card-header"><div><span class="section-kicker">02 / 生成配置</span><h2>选择测试策略</h2></div><button class="reset-button" id="reset-config">重置</button></div>
+              <div class="config-group"><label>测试重点 <span class="hint-icon" title="可多选">?</span></label><div class="check-grid">
+                <label class="check-chip selected"><input type="checkbox" checked value="functional" /><span class="check-box">✓</span>功能正确性</label>
+                <label class="check-chip selected"><input type="checkbox" checked value="boundary" /><span class="check-box">✓</span>边界与异常</label>
+                <label class="check-chip"><input type="checkbox" value="security" /><span class="check-box">✓</span>安全性</label>
+                <label class="check-chip"><input type="checkbox" value="usability" /><span class="check-box">✓</span>易用性</label>
+              </div></div>
+              <div class="select-row"><div class="select-field"><label>用例详细程度</label><select id="detail-level"><option value="standard">标准 · 推荐</option><option value="compact">精简</option><option value="deep">深度覆盖</option></select></div><div class="select-field"><label>目标测试层级</label><select id="test-level"><option>系统测试</option><option>集成测试</option><option>接口测试</option></select></div></div>
+              <div class="config-note"><span>✦</span><p>AI 会自动识别需求中的角色、状态、规则和依赖关系，并建立测试点与原文的追溯链接。</p></div>
+              <button class="primary-button generate-button" id="generate-btn"><span class="button-spark">✦</span><span>生成测试方案</span><span class="button-arrow">→</span></button>
+            </div>
+          </section>
+
+          <section class="recent-section">
+            <div class="section-heading"><div><span class="section-kicker">最近项目</span><h2>继续你的测试设计</h2></div><button class="view-all-button">查看全部 <span>→</span></button></div>
+            <div class="project-grid">
+              <article class="project-card"><div class="project-card-top"><div class="project-icon purple">◈</div><span class="status-dot done">已完成</span></div><h3>会员中心重构 · V2.4</h3><p>最后编辑于 2 小时前</p><div class="project-stats"><span><b>42</b> 测试点</span><span><b>86</b> 测试用例</span><span class="coverage"><i></i> 94% 覆盖</span></div><div class="project-progress"><div style="width:94%"></div></div></article>
+              <article class="project-card"><div class="project-card-top"><div class="project-icon orange">◇</div><span class="status-dot processing">生成中</span></div><h3>订单退款流程优化</h3><p>最后编辑于 昨天 16:42</p><div class="project-stats"><span><b>28</b> 测试点</span><span><b>—</b> 测试用例</span><span class="coverage"><i class="orange-dot"></i> 处理中</span></div><div class="project-progress"><div class="orange-progress" style="width:46%"></div></div></article>
+              <article class="project-card add-project" id="new-project-card"><div class="add-circle">+</div><h3>新建测试项目</h3><p>从一份需求开始</p></article>
+            </div>
+          </section>
+        </div>
+
+        <div class="page-container hidden" id="results-page">
+          <section class="results-header"><div><button class="back-link" id="back-to-dashboard">← 返回工作台</button><div class="eyebrow"><span class="sparkle">✦</span> GENERATED TEST PLAN</div><h1 id="results-title">会员登录功能 · 测试方案</h1><p id="results-subtitle">基于需求文档生成 · 刚刚</p></div><div class="results-actions"><button class="secondary-button" id="regenerate-btn">↻ 重新生成</button><div class="export-control"><button class="primary-button export-button" id="export-btn">↓ 导出 Excel</button><button class="primary-button export-toggle" id="export-toggle" aria-label="选择导出格式">⌄</button><div class="export-menu" id="export-menu"><div class="export-menu-title">选择交付格式</div><button class="export-option selected" data-export-format="excel"><span class="export-option-icon excel">▤</span><span><strong>Excel 测试用例</strong><small>适合用例评审与执行</small></span><span class="export-check">✓</span></button><button class="export-option" data-export-format="xmind"><span class="export-option-icon xmind">✦</span><span><strong>XMind 测试点</strong><small>适合测试点脑图评审</small></span><span class="export-check">✓</span></button></div></div></div></section>
+          <section class="metric-row"><div class="metric-card"><span class="metric-label">测试点</span><strong id="metric-points">24</strong><small>覆盖 6 个功能模块</small><div class="metric-icon mint">◈</div></div><div class="metric-card"><span class="metric-label">测试用例</span><strong id="metric-cases">56</strong><small>含 18 条边界场景</small><div class="metric-icon blue">▤</div></div><div class="metric-card"><span class="metric-label">需求覆盖率</span><strong id="metric-coverage">92<em>%</em></strong><small>高于团队平均 8%</small><div class="metric-icon purple">◒</div></div><div class="metric-card"><span class="metric-label">风险项</span><strong class="risk-number">4</strong><small>建议优先评审</small><div class="metric-icon red">!</div></div></section>
+          <section class="results-layout"><div class="card testpoints-card"><div class="card-header result-card-header"><div><span class="section-kicker">测试点清单</span><h2>覆盖范围与风险分布</h2></div><button class="filter-button">全部模块⌄</button></div><div class="point-summary"><div class="summary-bar"><span class="bar-functional"></span><span class="bar-boundary"></span><span class="bar-risk"></span></div><div class="summary-legend"><span><i class="legend-dot functional-dot"></i>功能 12</span><span><i class="legend-dot boundary-dot"></i>边界 8</span><span><i class="legend-dot risk-dot"></i>风险 4</span></div></div><div class="testpoint-list" id="testpoint-list"></div></div>
+            <div class="card insight-card"><div class="card-header"><div><span class="section-kicker">AI 评审建议</span><h2>值得关注的地方</h2></div><span class="ai-orb">✦</span></div><div class="insight-list"><div class="insight-item"><span class="insight-number">01</span><div><strong>缺少失败重试策略</strong><p>登录连续失败后的锁定时长尚未在需求中明确，建议补充规则。</p><button class="insight-action">定位原文 →</button></div></div><div class="insight-item"><span class="insight-number">02</span><div><strong>第三方依赖需要兜底</strong><p>短信服务异常时的用户提示和降级路径需要覆盖。</p><button class="insight-action">加入测试点 →</button></div></div><div class="insight-item"><span class="insight-number">03</span><div><strong>建议增加权限场景</strong><p>当前文档未描述已登录用户访问登录页的行为。</p><button class="insight-action">补充场景 →</button></div></div></div></div></section>
+          <section class="card cases-card"><div class="card-header result-card-header"><div><span class="section-kicker">测试用例</span><h2>可执行用例 <span class="count-badge" id="case-count-badge">56</span></h2></div><div class="table-tools"><div class="search-box"><span>⌕</span><input id="case-search" placeholder="搜索用例标题" /></div><button class="filter-button">筛选⌄</button></div></div><div class="case-table-wrap"><table><thead><tr><th width="8%">编号</th><th width="36%">用例标题</th><th width="16%">类型</th><th width="16%">优先级</th><th width="16%">状态</th><th width="8%"></th></tr></thead><tbody id="case-table-body"></tbody></table></div><div class="table-footer"><span id="table-result-count">显示 1-6 条，共 56 条</span><div class="pagination"><button disabled>←</button><button class="current">1</button><button>2</button><button>3</button><span>…</span><button>10</button><button>→</button></div></div></section>
+        </div>
+
+        <div class="page-container hidden placeholder-page" id="placeholder-page"><div class="placeholder-icon">✦</div><h1 id="placeholder-title">测试项目</h1><p>这个模块正在准备中，先从工作台生成第一份测试方案吧。</p><button class="primary-button" id="placeholder-back">返回工作台 →</button></div>
+      </main>
+    </div>
+    <div class="toast" id="toast"><span>✓</span><span id="toast-text">已完成</span></div>
+    <script src="app.js"></script>
+  </body>
+</html>
