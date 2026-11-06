@@ -5,8 +5,11 @@
   "description": "智能测试设计平台：从需求文档生成测试点和测试用例",
   "type": "module",
   "scripts": {
-    "check": "node --check web/app.js && node --check adapters/mock-model.js && node --check src/domain/model-contract.js && node --check src/domain/adapter-contract.js",
-    "start": "python3 -m http.server 4173 --directory web"
+    "check": "node --check web/app.js && node --check adapters/mock-model.js && node --check src/domain/model-contract.js && node --check src/domain/adapter-contract.js && node --check server/schemas.js && node --check server/config.js && node --check server/prompt.js && node --check server/requirement-normalizer.js && node --check server/rule-engine.js && node --check server/providers/mock.js && node --check server/providers/openai-compatible.js && node --check server/providers/index.js && node --check server/index.js",
+    "test": "node --test test/**/*.test.js tests/**/*.test.js",
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "start:static": "python3 -m http.server 4173 --directory web"
   }
 }
 

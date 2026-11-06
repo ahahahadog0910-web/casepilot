@@ -13,7 +13,7 @@ const sampleRequirement = `# 会员登录功能
 ## 权限与异常
 未登录用户访问会员中心时跳转到登录页；已登录用户再次访问登录页时直接进入会员首页。`;
 
-const testPoints = [
+let testPoints = [
   { title: '手机号 + 密码登录成功', desc: '输入合法手机号和正确密码，验证跳转及登录状态', type: 'functional', label: '功能' },
   { title: '新用户注册后完成登录', desc: '手机号注册、验证码校验与首次登录链路', type: 'functional', label: '功能' },
   { title: '登录状态与首页跳转', desc: '成功后跳转会员首页，并保持 7 天登录状态', type: 'functional', label: '功能' },
@@ -23,7 +23,7 @@ const testPoints = [
   { title: '短信服务异常降级', desc: '模拟第三方超时、失败，验证用户提示和重试', type: 'risk', label: '风险' }
 ];
 
-const cases = [
+let cases = [
   ['登录-001', '使用正确手机号和密码登录', '功能', '高', '待评审', 'functional'],
   ['登录-002', '未注册手机号注册后登录', '功能', '中', '待评审', 'functional'],
   ['登录-003', '手机号为空时提交登录', '边界', '高', '待评审', 'boundary'],
@@ -38,6 +38,14 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 let generated = false;
 let exportFormat = 'excel';
+let currentPlan = null;
+
+const typeLabels = { functional: '功能', boundary: '边界', security: '安全', usability: '易用性', performance: '性能', risk: '风险' };
+const priorityLabels = { high: '高', medium: '中', low: '低' };
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
 
 function showToast(message) {
   $('#toast-text').textContent = message;
@@ -50,8 +58,8 @@ function renderTestPoints() {
   $('#testpoint-list').innerHTML = testPoints.map((point, index) => `
     <div class="testpoint-item">
       <span class="point-no">${String(index + 1).padStart(2, '0')}</span>
-      <div class="point-main"><strong>${point.title}</strong><p>${point.desc}</p></div>
-      <span class="point-tag ${point.type}">${point.label}</span>
+      <div class="point-main"><strong>${escapeHtml(point.title)}</strong><p>${escapeHtml(point.desc)}</p></div>
+      <span class="point-tag ${escapeHtml(point.type)}">${escapeHtml(point.label)}</span>
     </div>`).join('');
 }
 
@@ -60,12 +68,53 @@ function renderCases(filter = '') {
   const filtered = cases.filter((item) => item[1].toLowerCase().includes(normalized) || item[0].toLowerCase().includes(normalized));
   $('#case-table-body').innerHTML = filtered.map((item) => `
     <tr>
-      <td>${item[0]}</td><td class="case-title">${item[1]}</td>
-      <td><span class="type-badge ${item[5] === 'boundary' ? 'boundary' : ''}">${item[2]}</span></td>
-      <td><span class="priority-badge ${item[3] === '高' ? 'high' : 'medium'}">${item[3]}优先级</span></td>
-      <td><span class="state-badge">${item[4]}</span></td><td><button class="row-more">•••</button></td>
+      <td>${escapeHtml(item[0])}</td><td class="case-title">${escapeHtml(item[1])}</td>
+      <td><span class="type-badge ${item[5] === 'boundary' ? 'boundary' : ''}">${escapeHtml(item[2])}</span></td>
+      <td><span class="priority-badge ${item[3] === '高' ? 'high' : 'medium'}">${escapeHtml(item[3])}优先级</span></td>
+      <td><span class="state-badge">${escapeHtml(item[4])}</span></td><td><button class="row-more">•••</button></td>
     </tr>`).join('');
-  $('#table-result-count').textContent = normalized ? `找到 ${filtered.length} 条匹配用例` : '显示 1-6 条，共 56 条';
+  $('#table-result-count').textContent = normalized ? `找到 ${filtered.length} 条匹配用例` : `显示 ${filtered.length ? 1 : 0}-${filtered.length} 条，共 ${cases.length} 条`;
+  $('#case-count-badge').textContent = cases.length;
+}
+
+function renderInsights(insights = []) {
+  $('#insight-list').innerHTML = insights.length ? insights.map((insight, index) => `
+    <div class="insight-item"><span class="insight-number">${String(index + 1).padStart(2, '0')}</span><div>
+      <strong>${escapeHtml(insight.title)}</strong>
+      <p>${escapeHtml(insight.description)}</p>
+      <button class="insight-action">${escapeHtml(insight.action || '加入评审清单')} →</button>
+    </div></div>`).join('') : '<div class="insight-item"><div><strong>暂无规则风险建议</strong><p>当前规则集未配置自动风险建议，请结合需求原文进行人工评审。</p></div></div>';
+}
+
+function applyPlan(plan) {
+  currentPlan = plan;
+  testPoints = (plan.testPoints || []).map((point) => ({
+    title: point.title,
+    desc: point.description || point.desc || '',
+    type: point.type || 'functional',
+    label: typeLabels[point.type] || '功能'
+  }));
+  cases = (plan.testCases || []).map((testCase, index) => [
+    testCase.id || `用例-${String(index + 1).padStart(3, '0')}`,
+    testCase.title || `测试用例 ${index + 1}`,
+    typeLabels[testCase.type] || '功能',
+    priorityLabels[testCase.priority] || '中',
+    testCase.status === 'draft' ? '草稿' : testCase.status === 'approved' ? '已通过' : '待评审',
+    testCase.type || 'functional'
+  ]);
+  const boundaryCount = cases.filter((item) => item[5] === 'boundary').length;
+  const riskCount = testPoints.filter((point) => point.type === 'risk').length + cases.filter((item) => item[5] === 'risk').length;
+  $('#metric-points').textContent = testPoints.length;
+  $('#metric-points-detail').textContent = `覆盖 ${new Set(testPoints.map((point) => point.type)).size} 个测试维度`;
+  $('#metric-cases').textContent = cases.length;
+  $('#metric-cases-detail').textContent = `含 ${boundaryCount} 条边界场景`;
+  $('#metric-coverage').innerHTML = `${Number(plan.coverage || 0)}<em>%</em>`;
+  $('#metric-coverage-detail').textContent = plan.coverageDefinition || '可追溯需求事实映射到规则测试点的比例';
+  $('#metric-risk').textContent = riskCount;
+  $('#metric-risk-detail').textContent = riskCount ? '建议优先评审' : '暂未发现高风险项';
+  renderInsights(plan.insights || []);
+  renderTestPoints();
+  renderCases();
 }
 
 function updateCount() {
@@ -150,24 +199,64 @@ function exportXMind() {
   showToast('XMind 测试点已导出');
 }
 
-function goToResults() {
+function goToResults(plan) {
   if (!$('#requirement-input').value.trim()) {
     $('#requirement-input').focus();
     showToast('请先输入或上传一份需求文档');
     return;
   }
-  const title = $('#requirement-input').value.includes('会员') ? '会员登录功能 · 测试方案' : '需求文档 · 测试方案';
-  $('#results-title').textContent = title;
-  $('#results-subtitle').textContent = `基于需求文档生成 · 刚刚 · ${$('#detail-level').selectedOptions[0].textContent}`;
+  $('#results-title').textContent = plan.title || '需求文档 · 测试方案';
+  $('#results-subtitle').textContent = `需求解析：${plan.provider || '模型'} / ${plan.modelId || 'unknown'} · 测试设计：确定性规则引擎 · ${$('#detail-level').selectedOptions[0].textContent}`;
   $('#dashboard-page').classList.add('hidden');
   $('#placeholder-page').classList.add('hidden');
   $('#results-page').classList.remove('hidden');
   $('#breadcrumb-current').textContent = '测试方案';
   generated = true;
-  renderTestPoints();
-  renderCases();
+  applyPlan(plan);
   showToast('测试方案生成完成');
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function requestTestPlan() {
+  const requirement = $('#requirement-input').value.trim();
+  if (!requirement) throw new Error('请先输入或上传一份需求文档');
+  const focusAreas = $$('.check-chip input:checked').map((input) => input.value);
+  const response = await fetch('/api/generate-test-plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requirement,
+      options: {
+        focusAreas,
+        detailLevel: $('#detail-level').value,
+        testLevel: $('#test-level').value
+      }
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || '模型代理服务调用失败');
+  return payload;
+}
+
+async function generateFromCurrentInput(button = $('#generate-btn')) {
+  if (!$('#requirement-input').value.trim()) {
+    $('#requirement-input').focus();
+    showToast('请先输入或上传一份需求文档');
+    return;
+  }
+  const label = button.querySelector('span:nth-child(2)');
+  const originalText = label?.textContent || '';
+  button.disabled = true;
+  if (label) label.textContent = '正在调用模型…';
+  try {
+    const plan = await requestTestPlan();
+    goToResults(plan);
+  } catch (error) {
+    showToast(error.message || '生成失败，请检查 Node.js 代理服务');
+  } finally {
+    button.disabled = false;
+    if (label) label.textContent = originalText;
+  }
 }
 
 function goToDashboard() {
@@ -180,14 +269,9 @@ function goToDashboard() {
 
 $('#requirement-input').addEventListener('input', updateCount);
 $('#sample-btn').addEventListener('click', () => { $('#requirement-input').value = sampleRequirement; updateCount(); showToast('已填入示例需求'); });
-$('#generate-btn').addEventListener('click', () => {
-  const button = $('#generate-btn');
-  button.disabled = true;
-  button.querySelector('span:nth-child(2)').textContent = '正在分析需求…';
-  window.setTimeout(() => { button.disabled = false; button.querySelector('span:nth-child(2)').textContent = '生成测试方案'; goToResults(); }, 650);
-});
+$('#generate-btn').addEventListener('click', () => generateFromCurrentInput());
 $('#back-to-dashboard').addEventListener('click', goToDashboard);
-$('#regenerate-btn').addEventListener('click', () => { showToast('已根据当前配置重新生成'); });
+$('#regenerate-btn').addEventListener('click', () => generateFromCurrentInput($('#regenerate-btn')));
 $('#export-btn').addEventListener('click', () => { if (exportFormat === 'xmind') exportXMind(); else exportExcel(); });
 $('#export-toggle').addEventListener('click', (event) => { event.stopPropagation(); $('#export-menu').classList.toggle('open'); });
 $$('.export-option').forEach((option) => option.addEventListener('click', () => {
@@ -221,3 +305,7 @@ $('#new-project-card').addEventListener('click', () => { $('#requirement-input')
 
 renderTestPoints();
 renderCases();
+renderInsights([
+  { title: '缺少失败重试策略', description: '需求中的异常重试规则需要明确次数、间隔和幂等行为。', action: '补充异常规则' },
+  { title: '建议增加权限场景', description: '建议确认不同登录状态和角色访问受限功能时的行为。', action: '加入测试点' }
+]);

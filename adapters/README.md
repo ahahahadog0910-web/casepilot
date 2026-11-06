@@ -1,27 +1,21 @@
 # 适配器约定
 
-适配器用于隔离具体模型、文档解析库和导出库。页面层只依赖统一的输入输出，不直接调用厂商 SDK。
+适配器用于隔离具体模型、文档解析库和导出库。模型适配器只读取需求并输出标准化需求，测试点和测试用例始终由规则引擎生成。
 
 ## 模型适配器
 
-建议每个模型适配器实现以下能力：
+模型适配器实现需求解析能力，输出必须符合 `src/domain/model-contract.js` 中的 `StructuredRequirement` 契约：
 
 ```js
 const adapter = {
   id: 'mock',
   name: '模拟模型',
-  capabilities: {
-    parseRequirement: true,
-    generateTestPlan: true,
-    stream: false
-  },
-  async parseRequirement(document, options) {},
-  async analyzeRequirement(parsedDocument, options) {},
-  async generateTestPlan(analysis, options) {}
+  capabilities: { parseRequirement: true },
+  async parseRequirement(document) {}
 };
 ```
 
-适配器返回的数据应符合 `src/domain/model-contract.js` 中的结构。每次生成建议保留 `modelId`、`promptVersion`、`createdAt` 和原始响应摘要，方便后续做模型对比和问题定位。
+模型原始响应先作为候选事实，由标准化器校验原文引用、确定事实粒度并输出固定 schema。Provider、模型 ID、提示词版本和原始响应摘要等实验信息应单独记录，不扩充 `StructuredRequirement` 或让模型参与生成 `TestPlan`。同一标准化需求、规则版本和生成选项必须交给同一规则引擎处理。
 
 ## 推荐的适配器类型
 
