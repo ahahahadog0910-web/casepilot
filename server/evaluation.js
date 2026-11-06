@@ -113,11 +113,17 @@ export function compareNormalizedRequirements(left, right) {
   return JSON.stringify(left.facts.map(canonicalFact).sort()) === JSON.stringify(right.facts.map(canonicalFact).sort());
 }
 
+function wait(milliseconds) {
+  return milliseconds > 0
+    ? new Promise((resolve) => setTimeout(resolve, milliseconds))
+    : Promise.resolve();
+}
+
 /**
  * Run the same synthetic cases through several Provider implementations and
  * preserve enough metadata to reproduce the comparison later.
  */
-export async function runModelEvaluation({ cases, providers, parameters = {} }) {
+export async function runModelEvaluation({ cases, providers, parameters = {}, delayMs = 0 }) {
   const runs = [];
   for (const provider of providers) {
     for (const evaluationCase of cases) {
@@ -143,6 +149,7 @@ export async function runModelEvaluation({ cases, providers, parameters = {} }) 
         normalizedRequirement: requirement,
         metrics
       });
+      await wait(delayMs);
     }
   }
   const metricNames = [

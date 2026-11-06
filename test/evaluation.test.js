@@ -12,6 +12,8 @@ import {
 import { STANDARDIZATION_EVALUATION_CASES } from '../tests/fixtures/evaluation-cases.js';
 import {
   createEvaluationProviders,
+  evaluationCaseLimit,
+  evaluationDelayMs,
   evaluationModelNames,
   evaluationParameters
 } from '../server/evaluation-config.js';
@@ -107,6 +109,11 @@ test('evaluation config expands one provider across a model matrix', () => {
     temperature: 0,
     detailLevel: 'standard',
     providerSelection: ['bailian'],
-    modelSelection: ['qwen-plus', 'qwen-turbo']
+    modelSelection: ['qwen-plus', 'qwen-turbo'],
+    caseLimit: 0,
+    delayMs: 0
   });
+  assert.equal(evaluationCaseLimit({ MODEL_EVAL_CASE_LIMIT: '2' }), 2);
+  assert.equal(evaluationDelayMs({ MODEL_EVAL_DELAY_MS: '1500' }), 1500);
+  assert.equal(evaluationCaseLimit({ MODEL_EVAL_CASE_LIMIT: '-1' }), 0);
 });

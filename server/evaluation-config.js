@@ -8,6 +8,11 @@ function csv(value) {
     .filter(Boolean);
 }
 
+function nonNegativeInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export function evaluationProviderNames(env = process.env) {
   return csv(env.MODEL_EVAL_PROVIDERS || 'mock');
 }
@@ -22,8 +27,18 @@ export function evaluationParameters(env = process.env) {
     temperature: 0,
     detailLevel: 'standard',
     providerSelection: evaluationProviderNames(env),
-    modelSelection: evaluationModelNames(env)
+    modelSelection: evaluationModelNames(env),
+    caseLimit: nonNegativeInteger(env.MODEL_EVAL_CASE_LIMIT, 0),
+    delayMs: nonNegativeInteger(env.MODEL_EVAL_DELAY_MS, 0)
   };
+}
+
+export function evaluationCaseLimit(env = process.env) {
+  return nonNegativeInteger(env.MODEL_EVAL_CASE_LIMIT, 0);
+}
+
+export function evaluationDelayMs(env = process.env) {
+  return nonNegativeInteger(env.MODEL_EVAL_DELAY_MS, 0);
 }
 
 /**
