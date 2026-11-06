@@ -1,7 +1,8 @@
 import { assertStructuredRequirement } from './schemas.js';
 import { REQUIREMENT_PROMPT_VERSION } from './prompt.js';
+import { generateTestPlan, RULE_ENGINE_VERSION } from './rule-engine.js';
 
-export const MODEL_EVALUATION_SCHEMA_VERSION = '1.0.0';
+export const MODEL_EVALUATION_SCHEMA_VERSION = '1.1.0';
 
 function canonicalFact(fact) {
   return JSON.stringify({
@@ -119,9 +120,53 @@ function wait(milliseconds) {
     : Promise.resolve();
 }
 
+function hasNonemptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasTraceableFactIds(item, factIds) {
+  return Array.isArray(item.fact_ids)
+    && item.fact_ids.length > 0
+    && item.fact_ids.every((factId) => factIds.has(factId));
+}
+
+function isExecutableCase(testCase) {
+  return hasNonemptyString(testCase.preconditions)
+    && Array.isArray(testCase.steps)
+    && testCase.steps.length > 0
+    && testCase.steps.every(hasNonemptyString)
+    && Array.isArray(testCase.expectedResults)
+    && testCase.expectedResults.length > 0
+    && testCase.expectedResults.every(hasNonemptyString);
+}
+
 /**
- * Run the same synthetic cases through several Provider implementations and
- * preserve enough metadata to reproduce the comparison later.
+ * Summarize deterministic output quality without judging model prose.
+ * Model differences should be visible in normalized facts and in the
+ * rule artifacts produced from those facts.
+ */
+export function evaluateTestPlanQuality(plan, requirement) {
+  const factIds = new Set(requirement.facts.map((fact) => fact.id));
+  const artifactCount = plan.testPoints.length + plan.testCases.length;
+  return {
+    testPointCount: plan.testPoints.length,
+    testCaseCount: plan.testCases.length,
+    draftCaseCount: plan.testCases.filter((testCase) => testCase.status === 'draft').length,
+    reviewCaseCount: plan.testCases.filter((testCase) => testCase.status === 'review').length,
+    approvedCaseCount: plan.testCases.filter((testCase) => testCase.status === 'approved').length,
+    productConfirmationCaseCount: plan.testCases.filter((testCase) => testCase.needsProductConfirmation).length,
+    ruleVersion: plan.ruleVersion,
+    coverage: plan.coverage,
+    allArtifactsTraceable: artifactCount > 0
+      && plan.testPoints.every((point) => hasTraceableFactIds(point, factIds))
+      && plan.testCases.every((testCase) => hasTraceableFactIds(testCase, factIds)),
+    allCasesExecutable: plan.testCases.length > 0 && plan.testCases.every(isExecutableCase)
+  };
+}
+
+/**
+ * Run the same synthetic cases through several Provider implementations,
+ * normalize the model response, and generate the final deterministic plan.
  */
 export async function runModelEvaluation({ cases, providers, parameters = {}, delayMs = 0 }) {
   const runs = [];
@@ -138,6 +183,12 @@ export async function runModelEvaluation({ cases, providers, parameters = {}, de
           expectedConflicts: evaluationCase.expectedConflicts
         }
       );
+      const testPlan = generateTestPlan(requirement, {
+        detailLevel: parameters.detailLevel || 'standard'
+      }, {
+        provider: result.provider || provider.id,
+        modelId: result.modelId || provider.modelId || provider.id
+      });
       runs.push({
         caseId: evaluationCase.id,
         inputVersion: evaluationCase.version,
@@ -147,7 +198,9 @@ export async function runModelEvaluation({ cases, providers, parameters = {}, de
         parameters: { ...parameters },
         rawResponse: result.rawResponse ?? null,
         normalizedRequirement: requirement,
-        metrics
+        metrics,
+        testPlan,
+        testPlanQuality: evaluateTestPlanQuality(testPlan, requirement)
       });
       await wait(delayMs);
     }
@@ -161,11 +214,36 @@ export async function runModelEvaluation({ cases, providers, parameters = {}, de
     name,
     items.length ? items.reduce((total, run) => total + run.metrics[name], 0) / items.length : 1
   ]));
+  const planQualityMetricNames = [
+    'testPointCount', 'testCaseCount', 'draftCaseCount', 'reviewCaseCount',
+    'approvedCaseCount', 'productConfirmationCaseCount', 'coverage'
+  ];
+  const averagePlanQuality = (items) => ({
+    ...Object.fromEntries(planQualityMetricNames.map((name) => [
+      name,
+      items.length
+        ? items.reduce((total, run) => total + run.testPlanQuality[name], 0) / items.length
+        : 0
+    ])),
+    allArtifactsTraceableRate: ratio(
+      items.filter((run) => run.testPlanQuality.allArtifactsTraceable).length,
+      items.length
+    ),
+    allCasesExecutableRate: ratio(
+      items.filter((run) => run.testPlanQuality.allCasesExecutable).length,
+      items.length
+    ),
+    ruleVersion: RULE_ENGINE_VERSION
+  });
   const averages = averageMetrics(runs);
   const byProvider = Object.fromEntries(
     [...new Set(runs.map((run) => `${run.provider}:${run.modelId}`))].map((key) => {
       const providerRuns = runs.filter((run) => `${run.provider}:${run.modelId}` === key);
-      return [key, { runCount: providerRuns.length, averages: averageMetrics(providerRuns) }];
+      return [key, {
+        runCount: providerRuns.length,
+        averages: averageMetrics(providerRuns),
+        planQuality: averagePlanQuality(providerRuns)
+      }];
     })
   );
   return {
@@ -173,6 +251,11 @@ export async function runModelEvaluation({ cases, providers, parameters = {}, de
     promptVersion: REQUIREMENT_PROMPT_VERSION,
     parameters: { ...parameters },
     runs,
-    summary: { runCount: runs.length, averages, byProvider }
+    summary: {
+      runCount: runs.length,
+      averages,
+      planQuality: averagePlanQuality(runs),
+      byProvider
+    }
   };
 }

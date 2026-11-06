@@ -327,7 +327,8 @@ function casesForRule(fact, startIndex) {
     case 'transition': {
       const from = fact.from || '起始状态';
       const to = fact.to || '目标状态';
-      return [makeCase(fact, startIndex, `状态由“${from}”转为“${to}”`, {
+      return [makeCase(fact, startIndex, {
+        title: `状态由“${from}”转为“${to}”`,
         type: 'functional',
         priority: 'high',
         preconditions: `准备状态为“${from}”且可触发该状态迁移的测试对象`,

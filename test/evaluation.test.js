@@ -7,6 +7,7 @@ import { createProvider } from '../server/providers/index.js';
 import {
   compareNormalizedRequirements,
   evaluateNormalizedRequirement,
+  evaluateTestPlanQuality,
   runModelEvaluation
 } from '../server/evaluation.js';
 import { STANDARDIZATION_EVALUATION_CASES } from '../tests/fixtures/evaluation-cases.js';
@@ -42,6 +43,46 @@ test('evaluation measures normalized facts against a synthetic golden case', asy
   assert.equal(metrics.conflictRecall, 1);
 });
 
+test('evaluation includes the deterministic test plan and executable quality summary', async () => {
+  const provider = createProvider({ provider: 'mock' });
+  const result = await runModelEvaluation({
+    cases: [STANDARDIZATION_EVALUATION_CASES[0]],
+    providers: [provider],
+    parameters: { temperature: 0 }
+  });
+  const run = result.runs[0];
+
+  assert.ok(run.testPlan.testPoints.length > 0);
+  assert.ok(run.testPlan.testCases.length > 0);
+  assert.ok(run.testPlan.testPoints.every((point) => point.fact_ids.length > 0));
+  assert.ok(run.testPlan.testCases.every((testCase) => testCase.fact_ids.length > 0));
+  assert.ok(run.testPlan.testCases.every((testCase) => testCase.rule_version === run.testPlan.ruleVersion));
+  assert.equal(run.testPlan.generationMethod, 'deterministic-rules');
+  assert.equal(run.testPlanQuality.ruleVersion, run.testPlan.ruleVersion);
+  assert.equal(run.testPlanQuality.allArtifactsTraceable, true);
+  assert.equal(run.testPlanQuality.allCasesExecutable, true);
+  assert.equal(result.summary.planQuality.allArtifactsTraceableRate, 1);
+  assert.equal(result.summary.byProvider['mock:mock-parser'].planQuality.allCasesExecutableRate, 1);
+});
+
+test('empty test plans do not pass traceability or executability quality gates', async () => {
+  const provider = createProvider({ provider: 'mock' });
+  const { requirement } = await provider.parseRequirement({
+    requirement: STANDARDIZATION_EVALUATION_CASES[3].source
+  });
+  const quality = evaluateTestPlanQuality({
+    testPoints: [],
+    testCases: [],
+    ruleVersion: '1.6.0',
+    coverage: 0
+  }, requirement);
+
+  assert.equal(quality.testPointCount, 0);
+  assert.equal(quality.testCaseCount, 0);
+  assert.equal(quality.allArtifactsTraceable, false);
+  assert.equal(quality.allCasesExecutable, false);
+});
+
 test('model evaluation keeps provider metadata and compares normalized outputs', async () => {
   const provider = createProvider({ provider: 'mock' });
   const result = await runModelEvaluation({
@@ -50,7 +91,7 @@ test('model evaluation keeps provider metadata and compares normalized outputs',
     parameters: { temperature: 0 }
   });
 
-  assert.equal(result.schemaVersion, '1.0.0');
+  assert.equal(result.schemaVersion, '1.1.0');
   assert.equal(result.runs.length, STANDARDIZATION_EVALUATION_CASES.length);
   assert.equal(result.runs[0].provider, 'mock');
   assert.equal(result.runs[0].modelId, 'mock-parser');
@@ -58,6 +99,9 @@ test('model evaluation keeps provider metadata and compares normalized outputs',
   assert.equal(result.runs[0].metrics.factRecall, 1);
   assert.equal(result.runs[0].metrics.factPrecision, 1);
   assert.ok(result.runs[0].rawResponse);
+  assert.ok(result.runs[0].testPlan.testCases.length > 0);
+  assert.equal(result.runs[0].testPlanQuality.allArtifactsTraceable, true);
+  assert.equal(result.runs[0].testPlanQuality.allCasesExecutable, true);
   assert.equal(result.summary.runCount, STANDARDIZATION_EVALUATION_CASES.length);
   assert.equal(result.summary.averages.factRecall, 1);
   assert.equal(result.summary.averages.duplicateRate, 0);
@@ -79,6 +123,10 @@ test('batch evaluation command runs the synthetic set with mock by default', asy
   assert.equal(report.runs.length, STANDARDIZATION_EVALUATION_CASES.length);
   assert.ok(report.runs.every((run) => run.provider === 'mock'));
   assert.ok(report.runs.every((run) => run.metrics.factRecall === 1));
+  const generatedRuns = report.runs.filter((run) => run.normalizedRequirement.facts.length > 0);
+  assert.ok(generatedRuns.every((run) => run.testPlan.testCases.length > 0));
+  assert.ok(generatedRuns.every((run) => run.testPlanQuality.allArtifactsTraceable));
+  assert.ok(generatedRuns.every((run) => run.testPlanQuality.allCasesExecutable));
 });
 
 test('evaluation config expands one provider across a model matrix', () => {
