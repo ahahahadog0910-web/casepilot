@@ -3,8 +3,8 @@
  * A schema change must update the version and its contract tests.
  */
 
-export const STRUCTURED_REQUIREMENT_SCHEMA_VERSION = '1.0.0';
-export const TEST_PLAN_SCHEMA_VERSION = '2.0.0';
+export const STRUCTURED_REQUIREMENT_SCHEMA_VERSION = '1.1.0';
+export const TEST_PLAN_SCHEMA_VERSION = '2.1.0';
 
 export const REQUIREMENT_KINDS = Object.freeze(['rule', 'feature', 'workflow_step']);
 export const RULE_TYPES = Object.freeze([
@@ -56,10 +56,26 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {RequirementTrace[]} traces
  */
 
+/** @typedef {Object} RequirementOpenQuestion
+ * @property {string} id
+ * @property {string} statement
+ * @property {string} question
+ * @property {RequirementTrace} trace
+ */
+
+/** @typedef {Object} RequirementConflict
+ * @property {string} id
+ * @property {string[]} fact_ids
+ * @property {string} description
+ * @property {RequirementTrace[]} traces
+ */
+
 /** @typedef {Object} StructuredRequirement
- * @property {'1.0.0'} schemaVersion
+ * @property {'1.1.0'} schemaVersion
  * @property {string} title
  * @property {RequirementFact[]} facts
+ * @property {RequirementOpenQuestion[]} openQuestions
+ * @property {RequirementConflict[]} conflicts
  */
 
 /** @typedef {Object} TestPlanOptions
@@ -77,6 +93,8 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {'functional'|'boundary'|'security'|'usability'|'performance'|'risk'} type
  * @property {'low'|'medium'|'high'} priority
  * @property {RequirementTrace} trace
+ * @property {boolean} needsProductConfirmation
+ * @property {string[]} conflict_ids
  */
 
 /** @typedef {Object} TestCase
@@ -92,6 +110,8 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {'draft'|'review'|'approved'|'deprecated'} status
  * @property {string} testPointId
  * @property {RequirementTrace} trace
+ * @property {boolean} needsProductConfirmation
+ * @property {string[]} conflict_ids
  */
 
 /** @typedef {Object} TestPlanInsight
@@ -102,7 +122,7 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  */
 
 /** @typedef {Object} TestPlan
- * @property {'2.0.0'} schemaVersion
+ * @property {'2.1.0'} schemaVersion
  * @property {string} id
  * @property {string} title
  * @property {string} modelId
@@ -111,6 +131,8 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {string} ruleVersion
  * @property {TestPoint[]} testPoints
  * @property {TestCase[]} testCases
+ * @property {RequirementOpenQuestion[]} openQuestions
+ * @property {RequirementConflict[]} conflicts
  * @property {TestPlanInsight[]} insights
  * @property {number} coverage
  * @property {string} coverageDefinition
@@ -192,15 +214,38 @@ function validateFact(fact, path) {
   }
 }
 
+function validateOpenQuestion(item, path) {
+  objectAt(item, path, ['id', 'statement', 'question', 'trace']);
+  stringAt(item.id, `${path}.id`, { nonempty: true });
+  stringAt(item.statement, `${path}.statement`, { nonempty: true });
+  stringAt(item.question, `${path}.question`, { nonempty: true });
+  validateTrace(item.trace, `${path}.trace`);
+}
+
+function validateConflict(item, path) {
+  objectAt(item, path, ['id', 'fact_ids', 'description', 'traces']);
+  stringAt(item.id, `${path}.id`, { nonempty: true });
+  validateFactIds(item.fact_ids, `${path}.fact_ids`);
+  stringAt(item.description, `${path}.description`, { nonempty: true });
+  arrayAt(item.traces, `${path}.traces`, validateTrace);
+  if (item.traces.length < 2) fail(`${path}.traces`, '至少包含两个冲突来源');
+}
+
 /** @param {unknown} requirement @returns {asserts requirement is StructuredRequirement} */
 export function assertStructuredRequirement(requirement) {
-  objectAt(requirement, 'StructuredRequirement', ['schemaVersion', 'title', 'facts']);
+  objectAt(requirement, 'StructuredRequirement', ['schemaVersion', 'title', 'facts', 'openQuestions', 'conflicts']);
   enumAt(requirement.schemaVersion, 'StructuredRequirement.schemaVersion', [STRUCTURED_REQUIREMENT_SCHEMA_VERSION]);
   stringAt(requirement.title, 'StructuredRequirement.title', { nonempty: true });
   arrayAt(requirement.facts, 'StructuredRequirement.facts', validateFact);
-  if (!requirement.facts.length) fail('StructuredRequirement.facts', '至少包含一个事实');
+  arrayAt(requirement.openQuestions, 'StructuredRequirement.openQuestions', validateOpenQuestion);
+  arrayAt(requirement.conflicts, 'StructuredRequirement.conflicts', validateConflict);
+  if (!requirement.facts.length && !requirement.openQuestions.length) fail('StructuredRequirement.facts', '至少包含一个事实或待确认项');
   const ids = requirement.facts.map(({ id }) => id);
   if (new Set(ids).size !== ids.length) fail('StructuredRequirement.facts[].id', '唯一 ID');
+  const factIds = new Set(ids);
+  requirement.conflicts.forEach((conflict, index) => {
+    if (conflict.fact_ids.some((id) => !factIds.has(id))) fail(`StructuredRequirement.conflicts[${index}].fact_ids`, '现有事实 ID');
+  });
 }
 
 function validateOptions(options, path) {
@@ -212,7 +257,7 @@ function validateOptions(options, path) {
 }
 
 function validateTestPoint(point, path) {
-  objectAt(point, path, ['id', 'fact_ids', 'rule_version', 'title', 'description', 'type', 'priority', 'trace']);
+  objectAt(point, path, ['id', 'fact_ids', 'rule_version', 'title', 'description', 'type', 'priority', 'trace', 'needsProductConfirmation', 'conflict_ids']);
   stringAt(point.id, `${path}.id`, { nonempty: true });
   validateFactIds(point.fact_ids, `${path}.fact_ids`);
   stringAt(point.rule_version, `${path}.rule_version`, { nonempty: true });
@@ -221,12 +266,15 @@ function validateTestPoint(point, path) {
   enumAt(point.type, `${path}.type`, TEST_TYPES);
   enumAt(point.priority, `${path}.priority`, PRIORITIES);
   validateTrace(point.trace, `${path}.trace`);
+  if (typeof point.needsProductConfirmation !== 'boolean') fail(`${path}.needsProductConfirmation`, '布尔值');
+  arrayAt(point.conflict_ids, `${path}.conflict_ids`, (id, itemPath) => stringAt(id, itemPath, { nonempty: true }));
+  if (point.needsProductConfirmation !== (point.conflict_ids.length > 0)) fail(`${path}.conflict_ids`, '与 needsProductConfirmation 一致');
 }
 
 function validateTestCase(testCase, path) {
   objectAt(testCase, path, [
     'id', 'fact_ids', 'rule_version', 'title', 'type', 'priority', 'preconditions', 'steps', 'expectedResults',
-    'status', 'testPointId', 'trace'
+    'status', 'testPointId', 'trace', 'needsProductConfirmation', 'conflict_ids'
   ]);
   stringAt(testCase.id, `${path}.id`, { nonempty: true });
   validateFactIds(testCase.fact_ids, `${path}.fact_ids`);
@@ -242,6 +290,9 @@ function validateTestCase(testCase, path) {
   enumAt(testCase.status, `${path}.status`, ['draft', 'review', 'approved', 'deprecated']);
   stringAt(testCase.testPointId, `${path}.testPointId`, { nonempty: true });
   validateTrace(testCase.trace, `${path}.trace`);
+  if (typeof testCase.needsProductConfirmation !== 'boolean') fail(`${path}.needsProductConfirmation`, '布尔值');
+  arrayAt(testCase.conflict_ids, `${path}.conflict_ids`, (id, itemPath) => stringAt(id, itemPath, { nonempty: true }));
+  if (testCase.needsProductConfirmation !== (testCase.conflict_ids.length > 0)) fail(`${path}.conflict_ids`, '与 needsProductConfirmation 一致');
 }
 
 function validateFactIds(factIds, path) {
@@ -259,7 +310,7 @@ function validateInsight(insight, path) {
 export function assertTestPlan(plan) {
   objectAt(plan, 'TestPlan', [
     'schemaVersion', 'id', 'title', 'modelId', 'provider', 'generationMethod', 'ruleVersion',
-    'testPoints', 'testCases', 'insights', 'coverage', 'coverageDefinition', 'options', 'createdAt'
+    'testPoints', 'testCases', 'openQuestions', 'conflicts', 'insights', 'coverage', 'coverageDefinition', 'options', 'createdAt'
   ]);
   enumAt(plan.schemaVersion, 'TestPlan.schemaVersion', [TEST_PLAN_SCHEMA_VERSION]);
   for (const key of ['id', 'title', 'modelId', 'provider', 'ruleVersion', 'coverageDefinition', 'createdAt']) {
@@ -269,6 +320,8 @@ export function assertTestPlan(plan) {
   arrayAt(plan.testPoints, 'TestPlan.testPoints', validateTestPoint);
   arrayAt(plan.testCases, 'TestPlan.testCases', validateTestCase);
   arrayAt(plan.insights, 'TestPlan.insights', validateInsight);
+  arrayAt(plan.openQuestions, 'TestPlan.openQuestions', validateOpenQuestion);
+  arrayAt(plan.conflicts, 'TestPlan.conflicts', validateConflict);
   numberAt(plan.coverage, 'TestPlan.coverage', { minimum: 0, maximum: 100 });
   validateOptions(plan.options, 'TestPlan.options');
   if (!Number.isFinite(Date.parse(plan.createdAt))) fail('TestPlan.createdAt', 'ISO-8601 日期字符串');

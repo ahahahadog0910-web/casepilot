@@ -41,6 +41,22 @@ npm start
 
 没有 API Key 时，可以把 `.env` 中的 `MODEL_PROVIDER` 改为 `mock`，先验证页面和代理服务链路。
 
+## 合成评测
+
+阶段 3 的评测只使用项目内的合成需求和手写期望事实，不写入真实业务资料。默认运行 Mock Provider：
+
+```bash
+npm run evaluate:models
+```
+
+配置好百炼或其他 OpenAI 兼容 Provider 后，可以通过 `MODEL_EVAL_PROVIDERS` 选择评测 Provider，例如：
+
+```bash
+MODEL_EVAL_PROVIDERS=bailian npm run evaluate:models
+```
+
+命令输出 JSON，包含输入版本、Provider、模型名称、提示词版本、参数、原始响应、标准化需求、每个样本的质量指标和汇总均值，并按 Provider 与模型分别汇总。指标覆盖事实召回率、事实准确率、引用精度、规则分类准确率、重复率，以及待确认项和冲突的召回率、准确率。不同模型的比较只发生在需求事实标准化结果，后续测试点和用例仍由同一版本的规则引擎生成。
+
 ## 项目结构
 
 ```text

@@ -13,7 +13,13 @@ export function createProvider(config) {
       id: 'mock',
       configured: true,
       async parseRequirement({ requirement }) {
-        return { requirement: normalizeRequirement(parseRequirementMock(requirement), requirement), modelId: 'mock-parser', provider: 'mock' };
+        const rawResponse = parseRequirementMock(requirement);
+        return {
+          requirement: normalizeRequirement(rawResponse, requirement),
+          rawResponse,
+          modelId: 'mock-parser',
+          provider: 'mock'
+        };
       }
     };
   }

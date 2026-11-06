@@ -36,7 +36,9 @@ function generate(facts) {
   const requirement = {
     schemaVersion: STRUCTURED_REQUIREMENT_SCHEMA_VERSION,
     title: '合成规则回归',
-    facts
+    facts,
+    openQuestions: [],
+    conflicts: []
   };
   return { requirement, plan: generateTestPlan(requirement) };
 }

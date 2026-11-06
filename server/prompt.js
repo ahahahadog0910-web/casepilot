@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 
+export const REQUIREMENT_PROMPT_VERSION = '1.1.0';
+
 const testDesignSkill = readFileSync(
   new URL('../.cursor/skills/casepilot-test-design/SKILL.md', import.meta.url),
   'utf8'

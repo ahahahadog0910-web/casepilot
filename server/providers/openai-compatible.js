@@ -35,6 +35,7 @@ export async function parseRequirementWithOpenAICompatible({ apiBaseUrl, apiKey,
     if (!content) throw new Error('模型需求解析返回为空');
     return {
       requirement: normalizeRequirement(content, requirement),
+      rawResponse: payload,
       modelId: modelName,
       provider: provider || 'openai-compatible'
     };

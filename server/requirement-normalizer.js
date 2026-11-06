@@ -124,21 +124,25 @@ function referencedSegments(candidates, source, segments) {
       from = occurrence + 1;
     }
   }
-  const unresolved = new Set();
-  segments.forEach((segment, index) => {
-    if (!/(?:待定|待确认|待讨论|尚未确认|尚未确定|可能)/.test(segment.quote)) return;
-    unresolved.add(index);
-    // A standalone parenthetical such as “（待定）” qualifies the immediately
-    // preceding semicolon-delimited clause on the same source line.
-    const previous = segments[index - 1];
-    if (previous && previous.lineStart === segment.lineStart && /[；;]\s*$/.test(previous.quote)) {
-      unresolved.add(index - 1);
-    }
-  });
+  const unresolved = new Set(unresolvedSegments(segments).map((item) => item.index));
   return [...selected.keys()]
     .filter((index) => !unresolved.has(index))
     .sort((left, right) => left - right)
     .map((index) => segments[index]);
+}
+
+function unresolvedSegments(segments) {
+  const unresolved = new Map();
+  segments.forEach((segment, index) => {
+    if (!/(?:待定|待确认|待讨论|尚未确认|尚未确定|可能|需进一步确认)/.test(segment.quote)) return;
+    unresolved.set(index, segment);
+    // A parenthetical marker qualifies the preceding clause on the same line.
+    const previous = segments[index - 1];
+    if (previous && previous.lineStart === segment.lineStart && /[；;]\s*$/.test(previous.quote)) {
+      unresolved.set(index - 1, previous);
+    }
+  });
+  return [...unresolved].map(([index, segment]) => ({ index, ...segment }));
 }
 
 function classifyRuleType(statement) {
@@ -237,14 +241,17 @@ function inferField(statement, ruleType) {
 
 function valuesFromStatement(statement, ruleType) {
   const numbers = [...statement.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
-  const numericUnits = [...statement.matchAll(/\d+(?:\.\d+)?\s*(毫秒|秒|分钟|分|小时|天|元|个|人|位|次|条|字符|字节|%|％)/g)];
-  const units = statement.match(/(?:毫秒|秒|分钟|分|小时|天|元|个|人|位|次|条|字符|字节|%|％)/);
+  const numericUnits = [...statement.matchAll(/\d+(?:\.\d+)?\s*(毫秒|秒|分钟|分|小时|天|元|个|件|人|位|次|条|字符|字节|%|％)/g)];
+  const units = statement.match(/(?:毫秒|秒|分钟|分|小时|天|元|个|件|人|位|次|条|字符|字节|%|％)/);
   let unit = numericUnits.at(-1)?.[1] || units?.[0] || '';
   if (ruleType === 'range' && numbers.length >= 2) return { minimum: numbers[0], maximum: numbers[1], unit };
   if (ruleType === 'frequency' && /(?:(?:只|仅).{0,8}一次|(?:once\s+only))/i.test(statement)) {
     return { value: 1, unit: '次' };
   }
-  if (ruleType === 'frequency' && numbers.length >= 2) return { value: numbers.at(-1), maximum: numbers[0], unit: statement.match(/(?:毫秒|秒|分钟|分|小时|天)/)?.[0] || '' };
+  if (ruleType === 'frequency') {
+    const limit = statement.match(/(?:最多|至多|不超过)\s*(\d+(?:\.\d+)?)\s*(次|条|个)?/);
+    if (limit) return { value: Number(limit[1]), unit: limit[2] || '次' };
+  }
   if (ruleType === 'frequency' && numbers.length === 1) return { value: numbers[0], unit: statement.match(/(?:次|条|个)/)?.[0] || '' };
   if (ruleType === 'min' && numbers.length) return { value: numbers[0], minimum: numbers[0], unit };
   if (ruleType === 'max' && numbers.length) return { value: numbers[0], maximum: numbers[0], unit };
@@ -334,6 +341,50 @@ function canonicalFacts(source, selected) {
     }));
 }
 
+function openQuestionsFrom(source, segments) {
+  return unresolvedSegments(segments).map((segment, index) => ({
+    id: `question-${String(index + 1).padStart(3, '0')}`,
+    statement: segment.quote,
+    question: '请测试人员确认该规则是否存在特殊逻辑、适用范围或前置条件，并在确认前不要将其作为确定预期。',
+    trace: {
+      documentId: null,
+      section: sectionAt(source, segment.start),
+      quote: segment.quote,
+      startOffset: segment.start,
+      endOffset: segment.end
+    }
+  }));
+}
+
+function detectConflicts(facts) {
+  const groups = new Map();
+  for (const fact of facts) {
+    const group = groups.get(fact.field) || [];
+    group.push(fact);
+    groups.set(fact.field, group);
+  }
+  const conflicts = [];
+  for (const [field, group] of groups) {
+    for (const lower of group.filter((fact) => fact.rule_type === 'min')) {
+      for (const upper of group.filter((fact) => fact.rule_type === 'max')) {
+        const minimum = lower.minimum ?? lower.value;
+        const maximum = upper.maximum ?? upper.value;
+        if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) continue;
+        const lowerStrict = /(?:大于(?!等于)|(?<!<)>(?!=)|超过|多于)/.test(lower.statement);
+        const upperStrict = /(?:小于(?!等于)|(?<!>)<(?!=)|少于)/.test(upper.statement);
+        if (minimum < maximum || (minimum === maximum && !lowerStrict && !upperStrict)) continue;
+        conflicts.push({
+          id: `conflict-${String(conflicts.length + 1).padStart(3, '0')}`,
+          fact_ids: [lower.id, upper.id],
+          description: `“${field}”的下限条件与上限条件无法同时满足；请产品确认适用范围、条件或优先级。`,
+          traces: [lower.trace, upper.trace]
+        });
+      }
+    }
+  }
+  return conflicts;
+}
+
 export function normalizeRequirement(rawValue, source) {
   if (typeof source !== 'string' || !source.trim()) throw new Error('需求原文不能为空');
   const raw = parseJson(rawValue);
@@ -341,16 +392,16 @@ export function normalizeRequirement(rawValue, source) {
   const segments = sourceSegments(source);
   const selected = referencedSegments(candidates, source, segments);
   const facts = canonicalFacts(source, selected);
-
-  if (!facts.length) {
-    throw new Error('模型未能提取到可追溯的需求事实，请补充文档内容后重试');
-  }
+  const openQuestions = openQuestionsFrom(source, segments);
+  if (!facts.length && !openQuestions.length) throw new Error('模型未能提取到可追溯的需求事实，请补充文档内容后重试');
 
   const heading = source.match(/^\s*#\s+(.+)$/m)?.[1]?.trim();
   const normalized = {
     schemaVersion: STRUCTURED_REQUIREMENT_SCHEMA_VERSION,
     title: heading || '需求文档',
-    facts
+    facts,
+    openQuestions,
+    conflicts: detectConflicts(facts)
   };
   assertStructuredRequirement(normalized);
   return normalized;

@@ -7,7 +7,7 @@ export const RANGE_EXPECTED = {
     {
       id: 'fact-range-001',
       fact_ids: ['fact-range-001'],
-      rule_version: '1.5.0',
+      rule_version: '1.6.0',
       title: '金额必须在 10 至 20 元之间',
       description: '基于明确规则“金额必须在 10 至 20 元之间”进行规则测试',
       type: 'boundary',
@@ -18,14 +18,16 @@ export const RANGE_EXPECTED = {
         quote: '金额必须在 10 至 20 元之间',
         startOffset: 0,
         endOffset: 17
-      }
+      },
+      needsProductConfirmation: false,
+      conflict_ids: []
     }
   ],
   testCases: [
     {
       id: 'case-001',
       fact_ids: ['fact-range-001'],
-      rule_version: '1.5.0',
+      rule_version: '1.6.0',
       title: '金额低于范围下界',
       type: 'boundary',
       priority: 'high',
@@ -40,12 +42,14 @@ export const RANGE_EXPECTED = {
         quote: '金额必须在 10 至 20 元之间',
         startOffset: 0,
         endOffset: 17
-      }
+      },
+      needsProductConfirmation: false,
+      conflict_ids: []
     },
     {
       id: 'case-002',
       fact_ids: ['fact-range-001'],
-      rule_version: '1.5.0',
+      rule_version: '1.6.0',
       title: '金额位于范围下界',
       type: 'boundary',
       priority: 'high',
@@ -60,12 +64,14 @@ export const RANGE_EXPECTED = {
         quote: '金额必须在 10 至 20 元之间',
         startOffset: 0,
         endOffset: 17
-      }
+      },
+      needsProductConfirmation: false,
+      conflict_ids: []
     },
     {
       id: 'case-003',
       fact_ids: ['fact-range-001'],
-      rule_version: '1.5.0',
+      rule_version: '1.6.0',
       title: '金额位于范围上界',
       type: 'boundary',
       priority: 'high',
@@ -80,12 +86,14 @@ export const RANGE_EXPECTED = {
         quote: '金额必须在 10 至 20 元之间',
         startOffset: 0,
         endOffset: 17
-      }
+      },
+      needsProductConfirmation: false,
+      conflict_ids: []
     },
     {
       id: 'case-004',
       fact_ids: ['fact-range-001'],
-      rule_version: '1.5.0',
+      rule_version: '1.6.0',
       title: '金额超过范围上界',
       type: 'boundary',
       priority: 'high',
@@ -100,7 +108,9 @@ export const RANGE_EXPECTED = {
         quote: '金额必须在 10 至 20 元之间',
         startOffset: 0,
         endOffset: 17
-      }
+      },
+      needsProductConfirmation: false,
+      conflict_ids: []
     }
   ]
 };

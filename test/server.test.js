@@ -45,14 +45,72 @@ test('normalizer rejects a response with no traceable facts', () => {
   );
 });
 
+test('document titles, headings, and background prose never become requirement facts', () => {
+  const source = [
+    '# 合成项目说明',
+    '## 背景',
+    '为改善体验，本次计划建设新的能力。',
+    '## 功能需求',
+    '- 系统展示处理结果。'
+  ].join('\n');
+  const requirement = normalizeRequirement({
+    facts: [{ source_quote: source }]
+  }, source);
+
+  assert.deepEqual(requirement.facts.map(({ statement }) => statement), ['系统展示处理结果。']);
+  assert.equal(source.slice(requirement.facts[0].trace.startOffset, requirement.facts[0].trace.endOffset), '系统展示处理结果。');
+});
+
+test('unconfirmed statements stay outside facts and are surfaced for tester clarification', () => {
+  const source = '# 生成策略\n有效记录不少于 3 条时生成摘要；门槛为 3 条（待定）。';
+  const requirement = normalizeRequirement({ facts: [{ source_quote: source.split('\n')[1] }] }, source);
+
+  assert.equal(requirement.facts.length, 0);
+  assert.equal(requirement.openQuestions.length, 1);
+  assert.match(requirement.openQuestions[0].statement, /不少于 3 条/);
+  assert.match(requirement.openQuestions[0].question, /特殊逻辑.*前置条件/);
+  assert.equal(source.slice(requirement.openQuestions[0].trace.startOffset, requirement.openQuestions[0].trace.endOffset), requirement.openQuestions[0].trace.quote);
+  assert.deepEqual(generateTestPlan(requirement).testPoints, []);
+  assert.deepEqual(generateTestPlan(requirement).testCases, []);
+});
+
+test('incompatible numeric bounds become explicit conflicts and mark related test artifacts', () => {
+  const source = '# 密码规则\n密码长度至少 12 位，最多 8 位。';
+  const requirement = normalizeRequirement({ facts: [{ source_quote: '密码长度至少 12 位，最多 8 位。' }] }, source);
+  const plan = generateTestPlan(requirement);
+
+  assert.equal(requirement.facts.length, 2);
+  assert.equal(requirement.conflicts.length, 1);
+  assert.deepEqual(requirement.conflicts[0].fact_ids, requirement.facts.map(({ id }) => id));
+  assert.equal(requirement.conflicts[0].traces.length, 2);
+  assert.equal(plan.testPoints.length, 2);
+  assert.equal(plan.testCases.length, 1);
+  assert.ok(plan.testPoints.every((point) => point.needsProductConfirmation && point.conflict_ids.includes(requirement.conflicts[0].id)));
+  assert.ok(plan.testCases.every((testCase) => testCase.needsProductConfirmation && testCase.status === 'draft'));
+  assert.ok(plan.testCases.every((testCase) => testCase.expectedResults.every((result) => !/(?:通过|不通过)/.test(result))));
+  assert.ok(plan.testCases.every((testCase) => testCase.conflict_ids.includes(requirement.conflicts[0].id)));
+});
+
+test('compatible bounds remain ordinary unmarked test points', () => {
+  const source = '密码长度至少 8 位，最多 20 位。';
+  const requirement = normalizeRequirement({ facts: [{ source_quote: source }] }, source);
+  const plan = generateTestPlan(requirement);
+
+  assert.deepEqual(requirement.conflicts, []);
+  assert.ok(plan.testPoints.every((point) => point.needsProductConfirmation === false && point.conflict_ids.length === 0));
+  assert.ok(plan.testCases.every((testCase) => testCase.needsProductConfirmation === false && testCase.conflict_ids.length === 0));
+});
+
 test('versioned schema contracts have exact keys, fixed enums, and reject drift', () => {
   const source = '# 登录\n手机号必须填写。';
   const requirement = normalizeRequirement({ facts: [{ source_quote: '手机号必须填写。' }] }, source);
   assert.equal(requirement.schemaVersion, STRUCTURED_REQUIREMENT_SCHEMA_VERSION);
-  assert.deepEqual(Object.keys(requirement).sort(), ['facts', 'schemaVersion', 'title']);
+  assert.deepEqual(Object.keys(requirement).sort(), ['conflicts', 'facts', 'openQuestions', 'schemaVersion', 'title']);
   assert.deepEqual(Object.keys(requirement.facts[0]).sort(), [
     'field', 'from', 'id', 'kind', 'maximum', 'minimum', 'roles', 'rule_type', 'statement', 'trace', 'traces', 'unit', 'value', 'values', 'to'
   ].sort());
+  assert.deepEqual(requirement.openQuestions, []);
+  assert.deepEqual(requirement.conflicts, []);
   assert.deepEqual(Object.keys(requirement.facts[0].trace).sort(), ['documentId', 'endOffset', 'quote', 'section', 'startOffset']);
   assertStructuredRequirement(requirement);
   assert.throws(() => assertStructuredRequirement({ ...requirement, unexpected: true }), /契约校验失败/);
@@ -128,7 +186,8 @@ test('runtime requirement prompt loads the project Skill without allowing sugges
   const prompt = buildRequirementPrompt(syntheticInput);
   assert.match(prompt, /CasePilot 测试设计质量 Skill/);
   assert.match(prompt, /name: casepilot-test-design/);
-  assert.match(prompt, /不得放入 `facts`/);
+  assert.match(prompt, /openQuestions/);
+  assert.match(prompt, /不扩展隐性风险检查清单/);
   assert.match(prompt, /只有经产品确认的业务行为才能进入确定性规则/);
   assert.match(prompt, /字段值应保持一致/);
 });
@@ -150,12 +209,12 @@ test('rule engine creates boundary cases from structured facts without model out
   assert.equal(first.ruleVersion, RULE_ENGINE_VERSION);
   assert.equal(first.schemaVersion, TEST_PLAN_SCHEMA_VERSION);
   assert.deepEqual(Object.keys(first).sort(), [
-    'coverage', 'coverageDefinition', 'createdAt', 'generationMethod', 'id', 'insights', 'modelId', 'options',
+    'conflicts', 'coverage', 'coverageDefinition', 'createdAt', 'generationMethod', 'id', 'insights', 'modelId', 'openQuestions', 'options',
     'provider', 'ruleVersion', 'schemaVersion', 'testCases', 'testPoints', 'title'
   ]);
-  assert.deepEqual(Object.keys(first.testPoints[0]).sort(), ['description', 'fact_ids', 'id', 'priority', 'rule_version', 'title', 'trace', 'type']);
+  assert.deepEqual(Object.keys(first.testPoints[0]).sort(), ['conflict_ids', 'description', 'fact_ids', 'id', 'needsProductConfirmation', 'priority', 'rule_version', 'title', 'trace', 'type']);
   assert.deepEqual(Object.keys(first.testCases[0]).sort(), [
-    'expectedResults', 'fact_ids', 'id', 'preconditions', 'priority', 'rule_version', 'status', 'steps', 'testPointId', 'title', 'trace', 'type'
+    'conflict_ids', 'expectedResults', 'fact_ids', 'id', 'needsProductConfirmation', 'preconditions', 'priority', 'rule_version', 'status', 'steps', 'testPointId', 'title', 'trace', 'type'
   ]);
   assert.deepEqual(Object.keys(first.options).sort(), ['detailLevel', 'focusAreas', 'testLevel']);
   assert.deepEqual(first.options, { focusAreas: ['functional', 'boundary'], detailLevel: 'standard', testLevel: 'system' });

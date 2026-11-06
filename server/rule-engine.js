@@ -14,7 +14,7 @@ const operatorTypes = {
   permission: 'security', general: 'functional'
 };
 
-export const RULE_ENGINE_VERSION = '1.5.0';
+export const RULE_ENGINE_VERSION = '1.6.0';
 
 function format(value, unit = '') {
   return `${value}${unit}`;
@@ -34,7 +34,8 @@ function makeCase(fact, index, {
   preconditions,
   steps,
   expectedResults,
-  status = 'review'
+  status = 'review',
+  conflictIds = []
 }) {
   return {
     id: `case-${String(index).padStart(3, '0')}`,
@@ -48,7 +49,9 @@ function makeCase(fact, index, {
     expectedResults,
     status,
     testPointId: fact.id,
-    trace: fact.trace
+    trace: fact.trace,
+    needsProductConfirmation: conflictIds.length > 0,
+    conflict_ids: conflictIds
   };
 }
 
@@ -381,6 +384,8 @@ function mergeEquivalentCases(cases, testPoints) {
     }
     existing.fact_ids = [...new Set([...existing.fact_ids, ...testCase.fact_ids])];
     existing.expectedResults = [...new Set([...existing.expectedResults, ...testCase.expectedResults])];
+    existing.conflict_ids = [...new Set([...existing.conflict_ids, ...testCase.conflict_ids])];
+    existing.needsProductConfirmation = existing.conflict_ids.length > 0;
     const linkedPoint = testPointById.get(existing.testPointId);
     if (linkedPoint) linkedPoint.fact_ids = [...new Set([...linkedPoint.fact_ids, ...testCase.fact_ids])];
     if (testCase.status === 'draft') existing.status = 'draft';
@@ -406,7 +411,7 @@ function normalizeOptions(options) {
   return { focusAreas: [...new Set(focusAreas)], detailLevel, testLevel };
 }
 
-function ruleTestPoint(fact) {
+function ruleTestPoint(fact, conflictIds = []) {
   return {
     id: fact.id,
     fact_ids: [fact.id],
@@ -415,11 +420,13 @@ function ruleTestPoint(fact) {
     description: `基于明确规则“${fact.statement}”进行规则测试`,
     type: operatorTypes[fact.rule_type] || 'functional',
     priority: 'high',
-    trace: fact.trace
+    trace: fact.trace,
+    needsProductConfirmation: conflictIds.length > 0,
+    conflict_ids: conflictIds
   };
 }
 
-function testPointForFeature(fact) {
+function testPointForFeature(fact, conflictIds = []) {
   return {
     id: fact.id,
     fact_ids: [fact.id],
@@ -428,8 +435,23 @@ function testPointForFeature(fact) {
     description: `基于可追溯事实“${fact.statement}”设计验证`,
     type: 'functional',
     priority: 'high',
-    trace: fact.trace
+    trace: fact.trace,
+    needsProductConfirmation: conflictIds.length > 0,
+    conflict_ids: conflictIds
   };
+}
+
+function confirmationCase(fact, startIndex, conflictIds) {
+  return makeCase(fact, startIndex, {
+    title: `待产品确认：${fact.field}`,
+    type: operatorTypes[fact.rule_type] || 'functional',
+    priority: 'high',
+    preconditions: '冲突规则尚未确认，暂不执行确定性通过/失败判定',
+    steps: ['向产品确认冲突规则的适用范围、特殊逻辑及前置条件', '根据确认结果补充或修订需求基线后再执行测试'],
+    expectedResults: ['确认前不设定该冲突规则的判定预期'],
+    status: 'draft',
+    conflictIds
+  });
 }
 
 /**
@@ -440,7 +462,7 @@ function testPointForFeature(fact) {
  * @returns {{testPoints: import('./schemas.js').TestPoint[], testCases: import('./schemas.js').TestCase[]}}
  */
 export function generateRangeTestPoints(fact, startIndex = 1) {
-  assertStructuredRequirement({ schemaVersion: STRUCTURED_REQUIREMENT_SCHEMA_VERSION, title: '范围规则样板', facts: [fact] });
+  assertStructuredRequirement({ schemaVersion: STRUCTURED_REQUIREMENT_SCHEMA_VERSION, title: '范围规则样板', facts: [fact], openQuestions: [], conflicts: [] });
   if (fact.kind !== 'rule' || fact.rule_type !== 'range') {
     throw new TypeError('generateRangeTestPoints 只接受 rule_type 为 range 的事实');
   }
@@ -453,10 +475,19 @@ export function generateTestPlan(requirement, options = {}, context = {}) {
   const normalizedOptions = normalizeOptions(options);
   const testPoints = [];
   const testCases = [];
+  const conflictsByFactId = new Map();
+  for (const conflict of requirement.conflicts) {
+    for (const factId of conflict.fact_ids) {
+      conflictsByFactId.set(factId, [...(conflictsByFactId.get(factId) || []), conflict.id]);
+    }
+  }
 
   for (const fact of requirement.facts) {
-    testPoints.push(fact.kind === 'rule' ? ruleTestPoint(fact) : testPointForFeature(fact));
-    testCases.push(...casesForFact(fact, testCases.length + 1));
+    const conflictIds = conflictsByFactId.get(fact.id) || [];
+    testPoints.push(fact.kind === 'rule' ? ruleTestPoint(fact, conflictIds) : testPointForFeature(fact, conflictIds));
+    testCases.push(...(conflictIds.length
+      ? [confirmationCase(fact, testCases.length + 1, conflictIds)]
+      : casesForFact(fact, testCases.length + 1)));
   }
 
   testCases.splice(0, testCases.length, ...mergeEquivalentCases(testCases, testPoints));
@@ -471,6 +502,8 @@ export function generateTestPlan(requirement, options = {}, context = {}) {
     ruleVersion: RULE_ENGINE_VERSION,
     testPoints,
     testCases,
+    openQuestions: requirement.openQuestions,
+    conflicts: requirement.conflicts,
     insights: [],
     coverage: modeledFacts ? 100 : 0,
     coverageDefinition: '需求解析得到的可追溯事实映射到规则测试点的比例',
