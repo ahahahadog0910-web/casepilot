@@ -11,6 +11,7 @@ export function createProvider(config) {
   if (config.provider === 'mock') {
     return {
       id: 'mock',
+      modelId: 'mock-parser',
       configured: true,
       async parseRequirement({ requirement }) {
         const rawResponse = parseRequirementMock(requirement);
@@ -27,6 +28,7 @@ export function createProvider(config) {
   if (config.provider === 'bailian' || config.provider === 'openai-compatible') {
     return {
       id: config.provider,
+      modelId: config.modelName,
       configured: Boolean(config.apiKey),
       async parseRequirement({ requirement }) {
         return parseRequirementWithOpenAICompatible({ ...config, requirement });

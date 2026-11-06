@@ -55,6 +55,16 @@ npm run evaluate:models
 MODEL_EVAL_PROVIDERS=bailian npm run evaluate:models
 ```
 
+同一 Provider 下比较多个模型时，使用 `MODEL_EVAL_MODELS` 传入逗号分隔的模型名称。每个模型会运行完全相同的合成评测集，后续仍由同一版本的标准化器和规则引擎处理：
+
+```bash
+MODEL_EVAL_PROVIDERS=bailian \
+MODEL_EVAL_MODELS=qwen-plus,qwen-turbo,qwen-max \
+node scripts/evaluate-models.js
+```
+
+报告的 `summary.byProvider` 会分别列出 `bailian:qwen-plus`、`bailian:qwen-turbo` 等模型的指标，便于比较事实抽取质量。模型评测失败时应先修复 Provider 配置或模型响应，不修改规则引擎来迁就模型。
+
 命令输出 JSON，包含输入版本、Provider、模型名称、提示词版本、参数、原始响应、标准化需求、每个样本的质量指标和汇总均值，并按 Provider 与模型分别汇总。指标覆盖事实召回率、事实准确率、引用精度、规则分类准确率、重复率，以及待确认项和冲突的召回率、准确率。不同模型的比较只发生在需求事实标准化结果，后续测试点和用例仍由同一版本的规则引擎生成。
 
 ## 项目结构

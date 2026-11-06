@@ -10,6 +10,11 @@ import {
   runModelEvaluation
 } from '../server/evaluation.js';
 import { STANDARDIZATION_EVALUATION_CASES } from '../tests/fixtures/evaluation-cases.js';
+import {
+  createEvaluationProviders,
+  evaluationModelNames,
+  evaluationParameters
+} from '../server/evaluation-config.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -72,4 +77,36 @@ test('batch evaluation command runs the synthetic set with mock by default', asy
   assert.equal(report.runs.length, STANDARDIZATION_EVALUATION_CASES.length);
   assert.ok(report.runs.every((run) => run.provider === 'mock'));
   assert.ok(report.runs.every((run) => run.metrics.factRecall === 1));
+});
+
+test('evaluation config expands one provider across a model matrix', () => {
+  const created = [];
+  const providers = createEvaluationProviders({
+    env: {
+      MODEL_EVAL_PROVIDERS: 'bailian,mock',
+      MODEL_EVAL_MODELS: 'qwen-plus, qwen-turbo'
+    },
+    baseConfig: { modelName: 'fallback-model', apiKey: 'test-key' },
+    providerFactory: (providerConfig) => {
+      created.push(providerConfig);
+      return { id: providerConfig.provider, modelId: providerConfig.modelName };
+    }
+  });
+
+  assert.deepEqual(created.map(({ provider, modelName }) => ({ provider, modelName })), [
+    { provider: 'bailian', modelName: 'qwen-plus' },
+    { provider: 'bailian', modelName: 'qwen-turbo' },
+    { provider: 'mock', modelName: 'fallback-model' }
+  ]);
+  assert.equal(providers.length, 3);
+  assert.deepEqual(evaluationModelNames({ MODEL_EVAL_MODELS: '' }, { modelName: 'fallback-model' }), ['fallback-model']);
+  assert.deepEqual(evaluationParameters({
+    MODEL_EVAL_PROVIDERS: 'bailian',
+    MODEL_EVAL_MODELS: 'qwen-plus,qwen-turbo'
+  }), {
+    temperature: 0,
+    detailLevel: 'standard',
+    providerSelection: ['bailian'],
+    modelSelection: ['qwen-plus', 'qwen-turbo']
+  });
 });

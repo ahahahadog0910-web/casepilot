@@ -173,6 +173,7 @@ CasePilot 的目标是将需求文档或设计文档转换为可评审、可追�
 - 实验记录保留输入版本、Provider、模型名称、提示词版本、参数、原始响应和标准化结果。
 - 支持比较不同候选事实粒度经过标准化后的结构一致性。
 - 提供 `npm run evaluate:models` 批量评测入口，默认只运行合成评测集和 Mock Provider；通过 `MODEL_EVAL_PROVIDERS` 可切换到已配置的真实 Provider。
+- 支持通过 `MODEL_EVAL_MODELS` 在同一 Provider 下批量比较多个模型；每个模型使用同一评测集、标准化器和规则引擎。
 
 阶段成果：
 

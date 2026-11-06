@@ -5,7 +5,7 @@
   "description": "智能测试设计平台：从需求文档生成测试点和测试用例",
   "type": "module",
   "scripts": {
-    "check": "node --check web/app.js && node --check adapters/mock-model.js && node --check scripts/evaluate-models.js && node --check src/domain/model-contract.js && node --check src/domain/adapter-contract.js && node --check server/schemas.js && node --check server/config.js && node --check server/prompt.js && node --check server/requirement-normalizer.js && node --check server/rule-engine.js && node --check server/evaluation.js && node --check server/providers/mock.js && node --check server/providers/openai-compatible.js && node --check server/providers/index.js && node --check server/index.js",
+    "check": "node --check web/app.js && node --check adapters/mock-model.js && node --check scripts/evaluate-models.js && node --check src/domain/model-contract.js && node --check src/domain/adapter-contract.js && node --check server/schemas.js && node --check server/config.js && node --check server/prompt.js && node --check server/requirement-normalizer.js && node --check server/rule-engine.js && node --check server/evaluation.js && node --check server/evaluation-config.js && node --check server/providers/mock.js && node --check server/providers/openai-compatible.js && node --check server/providers/index.js && node --check server/index.js",
     "test": "node --test test/**/*.test.js tests/**/*.test.js",
     "evaluate:models": "node scripts/evaluate-models.js",
     "start": "node server/index.js",
