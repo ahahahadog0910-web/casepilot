@@ -137,3 +137,47 @@ test('shared, scoped, synchronized, and reversible state facts produce separate 
   assert.ok(reversal.expectedResults.some((result) => /与操作前保持一致/.test(result)));
   assertTraceability(plan, requirement);
 });
+
+test('permission template allows every declared role and separately denies an undeclared role', () => {
+  const fact = makeFact('fact-permission', '只有管理员和审核员可以访问后台配置。', 'permission', {
+    field: '后台配置', roles: ['管理员', '审核员']
+  });
+  const { requirement, plan } = generate([fact]);
+
+  assert.deepEqual(plan.testCases.map(({ title, expectedResults }) => ({ title, expectedResults })), [
+    { title: '管理员验证后台配置访问权限', expectedResults: ['“管理员”可以访问或操作“后台配置”'] },
+    { title: '审核员验证后台配置访问权限', expectedResults: ['“审核员”可以访问或操作“后台配置”'] },
+    { title: '未授权主体无法操作后台配置', expectedResults: ['不属于已列授权角色的主体无法访问或操作“后台配置”'] }
+  ]);
+  assertTraceability(plan, requirement);
+});
+
+test('state transition needs an explicit trigger and reports it as a draft when absent', () => {
+  const unspecified = makeFact('fact-transition-unclear', '订单状态从待支付变为已支付。', 'transition', {
+    from: '待支付', to: '已支付'
+  });
+  const unclearPlan = generate([unspecified]).plan;
+  assert.equal(unclearPlan.testCases[0].status, 'draft');
+  assert.match(unclearPlan.testCases[0].preconditions, /触发状态迁移.*尚未明确/);
+  assert.match(unclearPlan.testCases[0].expectedResults[0], /不预设状态/);
+
+  const specified = makeFact('fact-transition-specified', '用户点击“确认支付”按钮后，订单状态从待支付变为已支付。', 'transition', {
+    from: '待支付', to: '已支付'
+  });
+  const specifiedPlan = generate([specified]).plan;
+  assert.equal(specifiedPlan.testCases[0].status, 'review');
+  assert.deepEqual(specifiedPlan.testCases[0].steps, ['执行操作：点击“确认支付”按钮', '读取对象当前状态']);
+  assert.deepEqual(specifiedPlan.testCases[0].expectedResults, ['对象状态更新为“已支付”']);
+});
+
+test('feature cases require a concrete action and observable outcome', () => {
+  const clearBehavior = makeFact('fact-feature-clear', '点击“保存”按钮后，页面展示“保存成功”。', 'general');
+  const clearPlan = generate([clearBehavior]).plan;
+  assert.deepEqual(clearPlan.testCases[0].steps, ['执行操作：点击“保存”按钮', '检查操作后的页面展示或跳转状态']);
+  assert.deepEqual(clearPlan.testCases[0].expectedResults, ['页面展示「保存成功」']);
+
+  const vagueBehavior = makeFact('fact-feature-vague', '用户可以查看处理结果。', 'general');
+  const vaguePlan = generate([vagueBehavior]).plan;
+  assert.equal(vaguePlan.testCases[0].status, 'draft');
+  assert.match(vaguePlan.testCases[0].expectedResults[0], /补充具体触发操作和可观察/);
+});

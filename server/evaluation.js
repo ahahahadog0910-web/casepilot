@@ -2,7 +2,7 @@ import { assertStructuredRequirement } from './schemas.js';
 import { REQUIREMENT_PROMPT_VERSION } from './prompt.js';
 import { generateTestPlan, RULE_ENGINE_VERSION } from './rule-engine.js';
 
-export const MODEL_EVALUATION_SCHEMA_VERSION = '1.1.0';
+export const MODEL_EVALUATION_SCHEMA_VERSION = '1.2.0';
 
 function canonicalFact(fact) {
   return JSON.stringify({
@@ -131,13 +131,24 @@ function hasTraceableFactIds(item, factIds) {
 }
 
 function isExecutableCase(testCase) {
+  if (testCase.status === 'draft') return false;
+  const hasActionStep = Array.isArray(testCase.steps)
+    && testCase.steps.some((step) => /(?:将.{1,48}(?:设为|设置为)|设置|执行|点击|选择|开启|关闭|提交|保存|创建|修改|删除|取消|发送|接收|进入|跳转|切换|上传|下载|触发|推进|使条件|在.{0,32}内执行|清空|填写|更新|统计|操作|访问)/.test(step));
+  const hasObservationStep = Array.isArray(testCase.steps)
+    && testCase.steps.some((step) => /(?:读取|检查|查看|观察|确认|校验|判定|统计|查询)/.test(step));
+  const expectedResultsAreObservable = Array.isArray(testCase.expectedResults)
+    && testCase.expectedResults.every((result) => !/(?:符合需求原文|满足原文|按原文执行|符合预期|待补充|需补充|尚未确认|不设定判定预期)/.test(result)
+      && /(?:通过|不通过|未执行|不执行|执行|展示|显示|隐藏|消失|跳转|返回|更新|保存|状态|读取到|一致|不一致|允许|可以|无法|拒绝|接受|上限|下限|不能为空|未被|没有)/.test(result));
   return hasNonemptyString(testCase.preconditions)
     && Array.isArray(testCase.steps)
     && testCase.steps.length > 0
     && testCase.steps.every(hasNonemptyString)
+    && hasActionStep
+    && hasObservationStep
     && Array.isArray(testCase.expectedResults)
     && testCase.expectedResults.length > 0
-    && testCase.expectedResults.every(hasNonemptyString);
+    && testCase.expectedResults.every(hasNonemptyString)
+    && expectedResultsAreObservable;
 }
 
 /**
@@ -148,19 +159,23 @@ function isExecutableCase(testCase) {
 export function evaluateTestPlanQuality(plan, requirement) {
   const factIds = new Set(requirement.facts.map((fact) => fact.id));
   const artifactCount = plan.testPoints.length + plan.testCases.length;
+  const executableCaseCount = plan.testCases.filter(isExecutableCase).length;
   return {
     testPointCount: plan.testPoints.length,
     testCaseCount: plan.testCases.length,
     draftCaseCount: plan.testCases.filter((testCase) => testCase.status === 'draft').length,
     reviewCaseCount: plan.testCases.filter((testCase) => testCase.status === 'review').length,
     approvedCaseCount: plan.testCases.filter((testCase) => testCase.status === 'approved').length,
+    executableCaseCount,
+    nonExecutableCaseCount: plan.testCases.length - executableCaseCount,
+    executableCaseRate: plan.testCases.length ? executableCaseCount / plan.testCases.length : 0,
     productConfirmationCaseCount: plan.testCases.filter((testCase) => testCase.needsProductConfirmation).length,
     ruleVersion: plan.ruleVersion,
     coverage: plan.coverage,
     allArtifactsTraceable: artifactCount > 0
       && plan.testPoints.every((point) => hasTraceableFactIds(point, factIds))
       && plan.testCases.every((testCase) => hasTraceableFactIds(testCase, factIds)),
-    allCasesExecutable: plan.testCases.length > 0 && plan.testCases.every(isExecutableCase)
+    allCasesExecutable: plan.testCases.length > 0 && executableCaseCount === plan.testCases.length
   };
 }
 
@@ -216,7 +231,8 @@ export async function runModelEvaluation({ cases, providers, parameters = {}, de
   ]));
   const planQualityMetricNames = [
     'testPointCount', 'testCaseCount', 'draftCaseCount', 'reviewCaseCount',
-    'approvedCaseCount', 'productConfirmationCaseCount', 'coverage'
+    'approvedCaseCount', 'executableCaseCount', 'nonExecutableCaseCount', 'executableCaseRate',
+    'productConfirmationCaseCount', 'coverage'
   ];
   const averagePlanQuality = (items) => ({
     ...Object.fromEntries(planQualityMetricNames.map((name) => [

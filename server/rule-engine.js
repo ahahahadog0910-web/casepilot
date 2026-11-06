@@ -14,7 +14,7 @@ const operatorTypes = {
   permission: 'security', general: 'functional'
 };
 
-export const RULE_ENGINE_VERSION = '1.6.0';
+export const RULE_ENGINE_VERSION = '1.7.0';
 
 function format(value, unit = '') {
   return `${value}${unit}`;
@@ -231,19 +231,52 @@ function reversibleStateCases(fact, startIndex) {
   })];
 }
 
+function explicitAction(statement) {
+  const match = statement.match(/(?:审核通过|审核拒绝|审批通过|审批拒绝|支付成功|支付失败|确认收货|点击|选择|开启|关闭|提交|保存|创建|修改|删除|取消|发送|接收|进入|跳转|切换|上传|下载|确认|执行|触发|查看|查询)[^，,。；;后时则并且且]{0,24}/);
+  return match?.[0].trim() || '';
+}
+
 function actionOutcomeCase(fact, index) {
   const statement = fact.statement;
-  const action = statement.match(/(?:点击|选择|开启|关闭|提交|保存|创建|修改|删除|取消|发送|接收|进入|跳转)[^，,。；;]{1,48}/)?.[0]?.trim();
-  const outcomes = [...statement.matchAll(/(?:调起|跳转至|跳转到|展示|显示|隐藏|消失|返回|默认选择|保存为|更新为)[^，,。；;]{0,48}/g)]
+  const actionMatch = statement.match(/(?:审核通过|审核拒绝|审批通过|审批拒绝|支付成功|支付失败|确认收货|点击|选择|开启|关闭|提交|保存|创建|修改|删除|取消|发送|接收|进入|跳转|切换|上传|下载|确认|执行|触发|查看|查询)[^，,。；;后时则并且且]{0,24}/);
+  if (!actionMatch) return null;
+  const action = actionMatch[0].trim();
+  const outcomePattern = /(?:默认选择|跳转至|跳转到|展示|显示|隐藏|消失|返回|保存为|更新为|调起|停止|不再)[^，,。；;]{0,36}/g;
+  const outcomes = [...statement.slice(actionMatch.index + actionMatch[0].length).matchAll(outcomePattern)]
     .map((match) => match[0].trim());
-  if (!action || !outcomes.length) return null;
+  if (!outcomes.length) return null;
+  const expectedResults = outcomes.map((outcome) => {
+    const marker = outcome.match(/^(默认选择|跳转至|跳转到|展示|显示|隐藏|消失|返回|保存为|更新为|调起|停止|不再)/)?.[0];
+    const detail = outcome.slice(marker.length).trim().replace(/^[“「『"]|[”」』"]$/g, '').trim();
+    switch (marker) {
+      case '展示':
+      case '显示': return `页面展示「${detail}」`;
+      case '隐藏':
+      case '消失': return `页面不再展示「${detail}」`;
+      case '跳转至':
+      case '跳转到': return `页面跳转至「${detail}」`;
+      case '返回': return `操作后返回「${detail}」`;
+      case '保存为':
+      case '更新为': return `保存或更新后的值为「${detail}」`;
+      case '默认选择': return `页面默认选中「${detail}」`;
+      case '调起': return `对应能力「${detail}」被打开`;
+      case '停止':
+      case '不再': return `操作后不再发生「${detail}」`;
+      default: return '';
+    }
+  }).filter(Boolean);
+  if (!expectedResults.length) return null;
+  const hasPageOutcome = outcomes.some((outcome) => /^(?:跳转至|跳转到|展示|显示|隐藏|消失|返回|默认选择)/.test(outcome));
+  const hasStateOutcome = outcomes.some((outcome) => /^(?:保存为|更新为)/.test(outcome));
   return makeCase(fact, index, {
     title: `验证操作结果：${action}`,
     type: 'functional',
     priority: 'high',
-    preconditions: '准备需求描述的对象和操作入口，并确认初始状态可读取',
-    steps: [`执行操作「${action}」`, '读取操作完成后的页面或对象状态'],
-    expectedResults: outcomes.map((outcome) => `操作后可观察到「${outcome}」`)
+    preconditions: `准备可执行“${action}”的测试对象和操作入口，并确认初始状态`,
+    steps: [`执行操作：${action}`, hasPageOutcome
+      ? '检查操作后的页面展示或跳转状态'
+      : hasStateOutcome ? '重新读取操作对象保存后的状态值' : '检查操作后的能力状态或执行记录'],
+    expectedResults
   });
 }
 
@@ -327,21 +360,32 @@ function casesForRule(fact, startIndex) {
     case 'transition': {
       const from = fact.from || '起始状态';
       const to = fact.to || '目标状态';
+      const action = explicitAction(statement);
+      if (!action) return [draftCase(fact, startIndex, `状态由“${from}”转为“${to}”`,
+        `已知起始状态为“${from}”，但触发状态迁移的操作和必要前置条件尚未明确`,
+        `需确认触发操作及前置条件；确认前不预设状态必须迁移至“${to}”`)];
       return [makeCase(fact, startIndex, {
         title: `状态由“${from}”转为“${to}”`,
         type: 'functional',
         priority: 'high',
         preconditions: `准备状态为“${from}”且可触发该状态迁移的测试对象`,
-        steps: ['执行需求中描述的状态迁移操作', '读取对象当前状态'],
+        steps: [`执行操作：${action}`, '读取对象当前状态'],
         expectedResults: [`对象状态更新为“${to}”`],
-        status: /(?:操作|触发|提交|执行|点击|收到|发送)/.test(statement) ? 'review' : 'draft'
+        status: 'review'
       })];
     }
     case 'permission': {
-      const roles = fact.roles?.length ? fact.roles : ['授权主体', '未授权主体'];
-      roles.forEach((role, index) => add(`${role}验证${field}访问权限`, [`使用“${role}”访问或操作“${field}”`, '读取访问结果'], [
-        index === 0 ? `“${role}”可以访问或操作“${field}”` : `“${role}”无法访问或操作“${field}”`
+      const roles = [...new Set(fact.roles || [])];
+      if (!roles.length) return [draftCase(fact, startIndex, `验证${field}访问权限`,
+        '授权角色未能从需求事实中明确识别',
+        '需确认允许访问或操作的角色，以及拒绝访问时可观察到的结果')];
+      roles.forEach((role) => add(`${role}验证${field}访问权限`, [`使用“${role}”访问或操作“${field}”`, '读取访问结果'], [
+        `“${role}”可以访问或操作“${field}”`
       ], 'high'));
+      add(`未授权主体无法操作${field}`,
+        [`使用不属于已列授权角色的主体访问或操作“${field}”`, '读取访问结果'],
+        [`不属于已列授权角色的主体无法访问或操作“${field}”`],
+        'high');
       break;
     }
     default:

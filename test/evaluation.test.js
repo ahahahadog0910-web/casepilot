@@ -73,7 +73,7 @@ test('empty test plans do not pass traceability or executability quality gates',
   const quality = evaluateTestPlanQuality({
     testPoints: [],
     testCases: [],
-    ruleVersion: '1.6.0',
+    ruleVersion: '1.7.0',
     coverage: 0
   }, requirement);
 
@@ -81,6 +81,9 @@ test('empty test plans do not pass traceability or executability quality gates',
   assert.equal(quality.testCaseCount, 0);
   assert.equal(quality.allArtifactsTraceable, false);
   assert.equal(quality.allCasesExecutable, false);
+  assert.equal(quality.executableCaseCount, 0);
+  assert.equal(quality.nonExecutableCaseCount, 0);
+  assert.equal(quality.executableCaseRate, 0);
 });
 
 test('model evaluation keeps provider metadata and compares normalized outputs', async () => {
@@ -91,7 +94,7 @@ test('model evaluation keeps provider metadata and compares normalized outputs',
     parameters: { temperature: 0 }
   });
 
-  assert.equal(result.schemaVersion, '1.1.0');
+  assert.equal(result.schemaVersion, '1.2.0');
   assert.equal(result.runs.length, STANDARDIZATION_EVALUATION_CASES.length);
   assert.equal(result.runs[0].provider, 'mock');
   assert.equal(result.runs[0].modelId, 'mock-parser');
@@ -126,7 +129,14 @@ test('batch evaluation command runs the synthetic set with mock by default', asy
   const generatedRuns = report.runs.filter((run) => run.normalizedRequirement.facts.length > 0);
   assert.ok(generatedRuns.every((run) => run.testPlan.testCases.length > 0));
   assert.ok(generatedRuns.every((run) => run.testPlanQuality.allArtifactsTraceable));
-  assert.ok(generatedRuns.every((run) => run.testPlanQuality.allCasesExecutable));
+  const qualityByCase = Object.fromEntries(generatedRuns.map((run) => [run.caseId, run.testPlanQuality]));
+  assert.equal(qualityByCase['synthetic-order-rules-001'].allCasesExecutable, true);
+  assert.equal(qualityByCase['synthetic-scheduled-action-003'].allCasesExecutable, true);
+  assert.equal(qualityByCase['synthetic-permission-006'].allCasesExecutable, true);
+  assert.equal(qualityByCase['synthetic-state-transition-002'].allCasesExecutable, false);
+  assert.ok(qualityByCase['synthetic-state-transition-002'].draftCaseCount > 0);
+  assert.equal(qualityByCase['synthetic-conflicting-bounds-005'].allCasesExecutable, false);
+  assert.ok(qualityByCase['synthetic-conflicting-bounds-005'].productConfirmationCaseCount > 0);
 });
 
 test('evaluation config expands one provider across a model matrix', () => {
