@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { makeDocx } from './helpers/docx.js';
 
 import { mockModelAdapter } from '../adapters/mock-model.js';
 import { normalizeRequirement } from '../server/requirement-normalizer.js';
@@ -212,9 +213,9 @@ test('rule engine creates boundary cases from structured facts without model out
     'conflicts', 'coverage', 'coverageDefinition', 'createdAt', 'generationMethod', 'id', 'insights', 'modelId', 'openQuestions', 'options',
     'provider', 'ruleVersion', 'schemaVersion', 'testCases', 'testPoints', 'title'
   ]);
-  assert.deepEqual(Object.keys(first.testPoints[0]).sort(), ['conflict_ids', 'description', 'fact_ids', 'id', 'needsProductConfirmation', 'priority', 'rule_version', 'title', 'trace', 'type']);
+  assert.deepEqual(Object.keys(first.testPoints[0]).sort(), ['conflict_ids', 'description', 'fact_ids', 'id', 'needsProductConfirmation', 'priority', 'rule_version', 'scenario_group', 'scenario_type', 'title', 'trace', 'type']);
   assert.deepEqual(Object.keys(first.testCases[0]).sort(), [
-    'conflict_ids', 'expectedResults', 'fact_ids', 'id', 'needsProductConfirmation', 'preconditions', 'priority', 'rule_version', 'status', 'steps', 'testPointId', 'title', 'trace', 'type'
+    'conflict_ids', 'expectedResults', 'fact_ids', 'id', 'needsProductConfirmation', 'preconditions', 'priority', 'rule_version', 'scenario_group', 'scenario_type', 'status', 'steps', 'testPointId', 'title', 'trace', 'type'
   ]);
   assert.deepEqual(Object.keys(first.options).sort(), ['detailLevel', 'focusAreas', 'testLevel']);
   assert.deepEqual(first.options, { focusAreas: ['functional', 'boundary'], detailLevel: 'standard', testLevel: 'system' });
@@ -266,13 +267,15 @@ test('OpenAI-compatible provider sends extraction prompt and normalizes the resp
   };
 
   const result = await parseRequirementWithOpenAICompatible({
-    apiBaseUrl: 'https://model.example/v1', apiKey: 'test-key', modelName: 'test-model',
+    apiBaseUrl: 'https://model.example/v1', apiKey: 'test-key', modelName: 'qwen3.8-flash',
     timeoutMs: 1000, provider: 'bailian', requirement: '用户可使用手机号登录。'
   });
 
   assert.equal(request.url, 'https://model.example/v1/chat/completions');
   assert.equal(request.options.headers.Authorization, 'Bearer test-key');
   assert.equal(request.body.temperature, 0);
+  assert.equal(request.body.max_tokens, 8192);
+  assert.equal(request.body.enable_thinking, false);
   assert.match(request.body.messages[1].content, /不得设计测试点/);
   assert.equal(result.requirement.facts[0].trace.quote, '用户可使用手机号登录。');
   assert.equal(result.provider, 'bailian');
@@ -316,6 +319,14 @@ test('mock HTTP flow exposes parser configuration and rule-generated plans', asy
   const health = await (await fetch(`${baseUrl}/api/health`)).json();
   assert.equal(health.generation, 'deterministic-rules');
   assert.equal(health.provider, 'mock');
+
+  const document = makeDocx('<w:document><w:body><w:p><w:r><w:t>测试需求正文。</w:t></w:r></w:p></w:body></w:document>');
+  const extractionResponse = await fetch(`${baseUrl}/api/extract-docx`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: document.toString('base64') })
+  });
+  assert.equal(extractionResponse.status, 200);
+  assert.deepEqual(await extractionResponse.json(), { text: '测试需求正文。', characterCount: 7 });
 
   const response = await fetch(`${baseUrl}/api/generate-test-plan`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

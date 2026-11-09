@@ -55,3 +55,4 @@ button { cursor: pointer; border: 0; background: none; color: inherit; }
 .export-option small { color: #a7aab6; font-size: 8px; }
 .export-check { margin-left: auto; color: var(--purple); font-size: 12px; opacity: 0; }
 .export-option.selected .export-check { opacity: 1; }
+.input-card textarea { height: 180px; min-height: 120px; max-height: 50vh; resize: vertical; font-size: 12px; }

@@ -287,10 +287,63 @@ $('#reset-config').addEventListener('click', () => { $$('.check-chip').forEach((
 
 $$('.check-chip').forEach((chip) => chip.addEventListener('click', () => { const input = chip.querySelector('input'); input.checked = !input.checked; chip.classList.toggle('selected', input.checked); }));
 $('#upload-trigger').addEventListener('click', () => $('#file-input').click());
-$('#file-input').addEventListener('change', (event) => { const file = event.target.files[0]; if (file) { $('#requirement-input').value = file.name.endsWith('.docx') ? `已上传：${file.name}\n\n（DOCX 文档将在接入解析服务后自动提取内容）` : sampleRequirement; updateCount(); showToast(`已读取 ${file.name}`); } });
+async function readRequirementFile(file) {
+  const maxBytes = 10 * 1024 * 1024;
+  const extension = file.name.split('.').at(-1).toLowerCase();
+  if (!['docx', 'txt', 'md'].includes(extension)) throw new Error('请选择 .docx、.txt 或 .md 文件');
+  if (file.size > maxBytes) throw new Error('文件超过 10 MB，请精简后再上传');
+  if (file.size === 0) throw new Error('文件为空，请选择有内容的文档');
+
+  if (extension === 'docx') {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    const response = await fetch('/api/extract-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: btoa(binary) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'DOCX 正文提取失败');
+    return payload.text;
+  }
+
+  return file.text();
+}
+
+async function handleRequirementFile(file) {
+  const input = $('#requirement-input');
+  const hint = $('#drop-hint');
+  hint.textContent = `正在读取 ${file.name}…`;
+  $('#upload-trigger').disabled = true;
+  try {
+    const text = await readRequirementFile(file);
+    if (!text.trim()) throw new Error('文档中没有可读取的文字内容');
+    if (text.length > 20000) throw new Error(`文档包含 ${text.length.toLocaleString()} 个字符，超过 20,000 字符限制；请精简后再上传`);
+    input.value = text;
+    input.focus();
+    updateCount();
+    hint.textContent = `已从 ${file.name} 提取正文，可继续检查或编辑（${text.length.toLocaleString()} 字）`;
+    showToast(`已提取 ${text.length.toLocaleString()} 字正文`);
+  } catch (error) {
+    hint.textContent = '支持 .txt / .md / .docx，单个文件不超过 10 MB';
+    showToast(error.message || '文件读取失败，请检查文件后重试');
+  } finally {
+    $('#upload-trigger').disabled = false;
+  }
+}
+
+$('#file-input').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (file) await handleRequirementFile(file);
+});
 ['dragenter', 'dragover'].forEach((name) => $('#drop-zone').addEventListener(name, (event) => { event.preventDefault(); $('#drop-zone').classList.add('dragover'); }));
 ['dragleave', 'drop'].forEach((name) => $('#drop-zone').addEventListener(name, (event) => { event.preventDefault(); $('#drop-zone').classList.remove('dragover'); }));
-$('#drop-zone').addEventListener('drop', (event) => { const file = event.dataTransfer.files[0]; if (file) { $('#requirement-input').value = file.name.endsWith('.docx') ? `已上传：${file.name}` : sampleRequirement; updateCount(); showToast(`已读取 ${file.name}`); } });
+$('#drop-zone').addEventListener('drop', async (event) => { const file = event.dataTransfer.files[0]; if (file) await handleRequirementFile(file); });
 
 $$('.nav-item').forEach((item) => item.addEventListener('click', () => {
   const page = item.dataset.page;

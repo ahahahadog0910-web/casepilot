@@ -4,7 +4,7 @@
  */
 
 export const STRUCTURED_REQUIREMENT_SCHEMA_VERSION = '1.1.0';
-export const TEST_PLAN_SCHEMA_VERSION = '2.1.0';
+export const TEST_PLAN_SCHEMA_VERSION = '2.2.0';
 
 export const REQUIREMENT_KINDS = Object.freeze(['rule', 'feature', 'workflow_step']);
 export const RULE_TYPES = Object.freeze([
@@ -16,6 +16,13 @@ export const PRIORITIES = Object.freeze(['low', 'medium', 'high']);
 export const TEST_LEVELS = Object.freeze(['system', 'integration', 'api', 'ui']);
 export const DETAIL_LEVELS = Object.freeze(['compact', 'standard', 'deep']);
 export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 'usability']);
+export const SCENARIO_GROUPS = Object.freeze([
+  'entry', 'navigation', 'content', 'collection', 'card', 'interaction', 'data_source', 'lifecycle', 'relationship', 'rule', 'general'
+]);
+export const SCENARIO_TYPES = Object.freeze([
+  'functional', 'boundary', 'negative', 'empty', 'permission', 'transition', 'source_selection',
+  'time_window', 'condition_matrix', 'conflict', 'clarification'
+]);
 
 /** @typedef {Object} RequirementDocument
  * @property {string} id
@@ -90,6 +97,8 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {string} rule_version Rule engine version that generated this point.
  * @property {string} title
  * @property {string} description
+ * @property {'entry'|'navigation'|'content'|'collection'|'card'|'interaction'|'data_source'|'lifecycle'|'relationship'|'rule'|'general'} scenario_group
+ * @property {'functional'|'boundary'|'negative'|'empty'|'permission'|'transition'|'source_selection'|'time_window'|'condition_matrix'|'conflict'|'clarification'} scenario_type
  * @property {'functional'|'boundary'|'security'|'usability'|'performance'|'risk'} type
  * @property {'low'|'medium'|'high'} priority
  * @property {RequirementTrace} trace
@@ -102,6 +111,8 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  * @property {string[]} fact_ids Source fact identifiers covered by this case.
  * @property {string} rule_version Rule engine version that generated this case.
  * @property {string} title
+ * @property {'entry'|'navigation'|'content'|'collection'|'card'|'interaction'|'data_source'|'lifecycle'|'relationship'|'rule'|'general'} scenario_group
+ * @property {'functional'|'boundary'|'negative'|'empty'|'permission'|'transition'|'source_selection'|'time_window'|'condition_matrix'|'conflict'|'clarification'} scenario_type
  * @property {'functional'|'boundary'|'security'|'usability'|'performance'|'risk'} type
  * @property {'low'|'medium'|'high'} priority
  * @property {string} preconditions
@@ -122,7 +133,7 @@ export const FOCUS_AREAS = Object.freeze(['functional', 'boundary', 'security', 
  */
 
 /** @typedef {Object} TestPlan
- * @property {'2.1.0'} schemaVersion
+ * @property {'2.2.0'} schemaVersion
  * @property {string} id
  * @property {string} title
  * @property {string} modelId
@@ -257,12 +268,14 @@ function validateOptions(options, path) {
 }
 
 function validateTestPoint(point, path) {
-  objectAt(point, path, ['id', 'fact_ids', 'rule_version', 'title', 'description', 'type', 'priority', 'trace', 'needsProductConfirmation', 'conflict_ids']);
+  objectAt(point, path, ['id', 'fact_ids', 'rule_version', 'title', 'description', 'scenario_group', 'scenario_type', 'type', 'priority', 'trace', 'needsProductConfirmation', 'conflict_ids']);
   stringAt(point.id, `${path}.id`, { nonempty: true });
   validateFactIds(point.fact_ids, `${path}.fact_ids`);
   stringAt(point.rule_version, `${path}.rule_version`, { nonempty: true });
   stringAt(point.title, `${path}.title`, { nonempty: true });
   stringAt(point.description, `${path}.description`);
+  enumAt(point.scenario_group, `${path}.scenario_group`, SCENARIO_GROUPS);
+  enumAt(point.scenario_type, `${path}.scenario_type`, SCENARIO_TYPES);
   enumAt(point.type, `${path}.type`, TEST_TYPES);
   enumAt(point.priority, `${path}.priority`, PRIORITIES);
   validateTrace(point.trace, `${path}.trace`);
@@ -273,13 +286,15 @@ function validateTestPoint(point, path) {
 
 function validateTestCase(testCase, path) {
   objectAt(testCase, path, [
-    'id', 'fact_ids', 'rule_version', 'title', 'type', 'priority', 'preconditions', 'steps', 'expectedResults',
+    'id', 'fact_ids', 'rule_version', 'title', 'scenario_group', 'scenario_type', 'type', 'priority', 'preconditions', 'steps', 'expectedResults',
     'status', 'testPointId', 'trace', 'needsProductConfirmation', 'conflict_ids'
   ]);
   stringAt(testCase.id, `${path}.id`, { nonempty: true });
   validateFactIds(testCase.fact_ids, `${path}.fact_ids`);
   stringAt(testCase.rule_version, `${path}.rule_version`, { nonempty: true });
   stringAt(testCase.title, `${path}.title`, { nonempty: true });
+  enumAt(testCase.scenario_group, `${path}.scenario_group`, SCENARIO_GROUPS);
+  enumAt(testCase.scenario_type, `${path}.scenario_type`, SCENARIO_TYPES);
   enumAt(testCase.type, `${path}.type`, TEST_TYPES);
   enumAt(testCase.priority, `${path}.priority`, PRIORITIES);
   stringAt(testCase.preconditions, `${path}.preconditions`);

@@ -52,6 +52,8 @@ function assertTraceability(plan, requirement) {
     assert.ok(item.fact_ids.length > 0);
     assert.ok(item.fact_ids.every((id) => factIds.has(id)));
     assert.equal(item.rule_version, RULE_ENGINE_VERSION);
+    assert.ok(item.scenario_group);
+    assert.ok(item.scenario_type);
     assert.ok(item.trace.quote);
   }
 
@@ -180,4 +182,63 @@ test('feature cases require a concrete action and observable outcome', () => {
   const vaguePlan = generate([vagueBehavior]).plan;
   assert.equal(vaguePlan.testCases[0].status, 'draft');
   assert.match(vaguePlan.testCases[0].expectedResults[0], /补充具体触发操作和可观察/);
+});
+
+test('condition matrix expands every AND combination with deterministic outcomes', () => {
+  const fact = makeFact('fact-and', '若用户已登录且账号状态正常，则展示推荐列表。', 'general', {
+    field: '推荐列表'
+  });
+  const plan = generate([fact]).plan;
+  assert.equal(plan.testCases.length, 4);
+  assert.ok(plan.testCases.every((item) => item.scenario_type === 'condition_matrix'));
+  assert.ok(plan.testCases.some((item) => /已登录不成立/.test(item.title) && /不执行/.test(item.expectedResults[0])));
+  assert.ok(plan.testCases.some((item) => /用户已登录成立/.test(item.title) && /账号状态正常成立/.test(item.title) && /执行/.test(item.expectedResults[0])));
+  assertTraceability(plan, { facts: [fact] });
+});
+
+test('source selection creates one executable case per declared source', () => {
+  const fact = makeFact('fact-source', '支持在主库或只读副本之间切换数据源。', 'general', {
+    field: '数据源', values: ['主库', '只读副本']
+  });
+  const plan = generate([fact]).plan;
+  assert.deepEqual(plan.testCases.map(({ scenario_group, scenario_type, steps, expectedResults }) => ({
+    scenario_group, scenario_type, steps, expectedResults
+  })), [
+    {
+      scenario_group: 'data_source', scenario_type: 'source_selection',
+      steps: ['将数据源切换为「主库」', '发起一次读取并检查请求来源或返回数据标记'],
+      expectedResults: ['读取使用已选择的数据源「主库」']
+    },
+    {
+      scenario_group: 'data_source', scenario_type: 'source_selection',
+      steps: ['将数据源切换为「只读副本」', '发起一次读取并检查请求来源或返回数据标记'],
+      expectedResults: ['读取使用已选择的数据源「只读副本」']
+    }
+  ]);
+  assertTraceability(plan, { facts: [fact] });
+});
+
+test('conflicts and unclear transitions are separately marked for confirmation', () => {
+  const fact = makeFact('fact-conflict', '数量最多为 10 个。', 'max', {
+    field: '数量', value: 10, maximum: 10
+  });
+  const requirement = {
+    schemaVersion: STRUCTURED_REQUIREMENT_SCHEMA_VERSION,
+    title: '冲突规则回归', facts: [fact], openQuestions: [],
+    conflicts: [{
+      id: 'conflict-001', fact_ids: [fact.id], description: '存在两个不兼容的上限',
+      traces: [fact.trace, { ...fact.trace, startOffset: 20, endOffset: 31, quote: '数量最多为 10 个。' }]
+    }]
+  };
+  const plan = generateTestPlan(requirement);
+  assert.equal(plan.testPoints[0].scenario_type, 'conflict');
+  assert.equal(plan.testCases[0].scenario_type, 'conflict');
+  assert.equal(plan.testCases[0].status, 'draft');
+  assert.match(plan.testCases[0].steps[0], /确认/);
+
+  const unclear = generate([makeFact('fact-unclear-transition', '状态从草稿变为已发布。', 'transition', {
+    from: '草稿', to: '已发布'
+  })]).plan;
+  assert.equal(unclear.testCases[0].scenario_type, 'clarification');
+  assert.equal(unclear.testCases[0].status, 'draft');
 });

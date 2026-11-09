@@ -12,6 +12,8 @@ export {
   TEST_LEVELS,
   DETAIL_LEVELS,
   FOCUS_AREAS,
+  SCENARIO_GROUPS,
+  SCENARIO_TYPES,
   assertStructuredRequirement,
   assertTestPlan
 } from '../src/domain/model-contract.js';

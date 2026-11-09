@@ -20,6 +20,8 @@ export async function parseRequirementWithOpenAICompatible({ apiBaseUrl, apiKey,
       body: JSON.stringify({
         model: modelName,
         temperature: 0,
+        max_tokens: 8192,
+        ...(provider === 'bailian' && /^qwen/i.test(modelName) ? { enable_thinking: false } : {}),
         messages: [
           { role: 'system', content: '你是一个严格遵循抽取边界的需求文档解析服务。' },
           { role: 'user', content: buildRequirementPrompt(requirement) }
@@ -40,7 +42,11 @@ export async function parseRequirementWithOpenAICompatible({ apiBaseUrl, apiKey,
       provider: provider || 'openai-compatible'
     };
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error(`模型需求解析超时（${timeoutMs}ms）`);
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error(`模型需求解析超过 ${Math.ceil(timeoutMs / 1000)} 秒仍未返回。请检查 Node 服务日志、模型服务状态或稍后重试。`);
+      timeoutError.code = 'MODEL_TIMEOUT';
+      throw timeoutError;
+    }
     throw error;
   } finally {
     clearTimeout(timeout);

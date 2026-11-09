@@ -28,7 +28,7 @@ const provider = process.env.MODEL_PROVIDER || 'bailian';
 const apiBaseUrl = (process.env.MODEL_API_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/$/, '');
 const modelName = process.env.MODEL_NAME || 'qwen-plus';
 const apiKey = process.env.MODEL_API_KEY || process.env.DASHSCOPE_API_KEY || '';
-const timeoutMs = Number.parseInt(process.env.MODEL_TIMEOUT_MS || '120000', 10);
+const timeoutMs = Number.parseInt(process.env.MODEL_TIMEOUT_MS || '300000', 10);
 
 export const config = {
   projectRoot,
@@ -38,5 +38,5 @@ export const config = {
   apiBaseUrl,
   modelName,
   apiKey,
-  timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 120000
+  timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 300000
 };

@@ -4,6 +4,7 @@ import http from 'node:http';
 import { config } from './config.js';
 import { createProvider } from './providers/index.js';
 import { generateTestPlan } from './rule-engine.js';
+import { extractDocxText } from './docx.js';
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -32,7 +33,7 @@ function sendError(response, status, message) {
   sendJson(response, status, { error: message });
 }
 
-function readJson(request, limit = 1024 * 1024) {
+function readJson(request, limit = 14 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
     request.setEncoding('utf8');
@@ -76,6 +77,19 @@ async function handleGenerate(request, response) {
   sendJson(response, 200, plan);
 }
 
+async function handleExtractDocx(request, response) {
+  const body = await readJson(request);
+  if (typeof body.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) {
+    return sendError(response, 400, '上传内容格式无效，请重新选择 DOCX 文件');
+  }
+  try {
+    const text = extractDocxText(Buffer.from(body.data, 'base64'));
+    return sendJson(response, 200, { text, characterCount: text.length });
+  } catch (error) {
+    return sendError(response, 400, error.message || 'DOCX 正文提取失败');
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -90,11 +104,12 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, { models: [{ id: modelProvider.id === 'mock' ? 'mock-parser' : config.modelName, provider: modelProvider.id, role: 'requirement-parser', active: true, configured: modelProvider.configured }] });
     }
     if (request.method === 'POST' && requestUrl.pathname === '/api/generate-test-plan') return await handleGenerate(request, response);
+    if (request.method === 'POST' && requestUrl.pathname === '/api/extract-docx') return await handleExtractDocx(request, response);
     if (request.method === 'GET') return serveStatic(request, response, requestUrl.pathname);
     return sendError(response, 405, '不支持的请求方法');
   } catch (error) {
     console.error(`[CasePilot] ${request.method} ${requestUrl.pathname}`, error);
-    return sendError(response, 502, error.message || '服务调用失败');
+    return sendError(response, error.code === 'MODEL_TIMEOUT' ? 504 : 502, error.message || '服务调用失败');
   }
 });
 server.listen(config.port, () => {

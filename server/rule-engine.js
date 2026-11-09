@@ -4,6 +4,7 @@ import {
   FOCUS_AREAS,
   DETAIL_LEVELS,
   TEST_LEVELS,
+  SCENARIO_TYPES,
   assertStructuredRequirement,
   assertTestPlan
 } from './schemas.js';
@@ -14,7 +15,32 @@ const operatorTypes = {
   permission: 'security', general: 'functional'
 };
 
-export const RULE_ENGINE_VERSION = '1.7.0';
+export const RULE_ENGINE_VERSION = '1.8.0';
+
+function scenarioGroup(fact) {
+  const text = `${fact.field} ${fact.statement}`;
+  const patterns = [
+    ['entry', /入口|进入|打开页面/], ['navigation', /跳转|导航|返回|路由/],
+    ['content', /文案|文本|内容|说明|描述/], ['collection', /列表|集合|排序|筛选|分页/],
+    ['card', /卡片|头像|昵称|用户资料/], ['interaction', /点击|按钮|提交|输入|操作/],
+    ['data_source', /数据源|来源|切换来源|读取来源/], ['lifecycle', /创建|更新|删除|过期|生效|失效/],
+    ['relationship', /关注|好友|成员|主理人|权限关系/]
+  ];
+  return patterns.find(([, pattern]) => pattern.test(text))?.[0] || (fact.kind === 'rule' ? 'rule' : 'general');
+}
+
+function scenarioType(fact, title, { conflict = false, status = 'review' } = {}) {
+  if (conflict) return 'conflict';
+  if (status === 'draft') return 'clarification';
+  if (/空|为空|无数据|无结果/.test(title)) return 'empty';
+  if (/权限|未授权/.test(title) || fact.rule_type === 'permission') return 'permission';
+  if (/状态|迁移|撤销/.test(title) || fact.rule_type === 'transition') return 'transition';
+  if (/来源|数据源/.test(title)) return 'source_selection';
+  if (/时间|触发点|调度|频率/.test(title) || fact.rule_type === 'frequency') return 'time_window';
+  if (/阈值|范围|上界|下界/.test(title) || ['min', 'max', 'range'].includes(fact.rule_type)) return 'boundary';
+  if (/不满足|无法|禁止|拒绝|不允许|不通过|未列出/.test(title)) return 'negative';
+  return 'functional';
+}
 
 function format(value, unit = '') {
   return `${value}${unit}`;
@@ -35,13 +61,17 @@ function makeCase(fact, index, {
   steps,
   expectedResults,
   status = 'review',
-  conflictIds = []
+  conflictIds = [],
+  scenarioType: explicitScenarioType
 }) {
+  const typeForScenario = explicitScenarioType || scenarioType(fact, title, { conflict: conflictIds.length > 0, status });
   return {
     id: `case-${String(index).padStart(3, '0')}`,
     fact_ids: [fact.id],
     rule_version: RULE_ENGINE_VERSION,
     title,
+    scenario_group: scenarioGroup(fact),
+    scenario_type: typeForScenario,
     type,
     priority,
     preconditions,
@@ -124,6 +154,11 @@ function scheduledActionCases(fact, startIndex) {
     `将测试时钟设为${trigger}前 1 分钟`,
     ...(guard ? [`使条件「${guard}」成立`] : [])
   ], [`${action}在设定触发点前未执行`]);
+
+  add('定时动作在触发点后仍执行', [
+    `将测试时钟设为${trigger}后 1 分钟`,
+    ...(guard ? [`使条件「${guard}」成立`] : [])
+  ], [`${action}已在设定触发点执行，且未因读取时间晚于触发点而遗漏`]);
 
   add(guard ? '定时条件满足时执行动作' : '到达设定时间时执行动作', [
     `将测试时钟推进至${trigger}`,
@@ -209,6 +244,49 @@ function accountScopeCases(fact, startIndex) {
   }));
 
   return cases;
+}
+
+function conditionMatrixCases(fact, startIndex) {
+  const statement = fact.statement;
+  const condition = statement.match(/(?:若|如果|当)\s*(.+?)\s*(?:则|就)/)?.[1]?.trim();
+  const action = statement.match(/(?:则|就)\s*([^，,。；;]+)/)?.[1]?.trim();
+  if (!condition || !action || !/(?:且|并且|同时|或|或者)/.test(condition)) return [];
+  const operator = /或|或者/.test(condition) ? 'or' : 'and';
+  const clauses = condition.split(operator === 'or' ? /或者|或/ : /并且|且|同时/)
+    .map((part) => part.trim().replace(/[，,、；;：:]+$/, ''))
+    .filter(Boolean);
+  if (clauses.length < 2 || clauses.length > 3) return [];
+  const cases = [];
+  for (let mask = 0; mask < (1 << clauses.length); mask += 1) {
+    const states = clauses.map((_, index) => Boolean(mask & (1 << index)));
+    const shouldRun = operator === 'and' ? states.every(Boolean) : states.some(Boolean);
+    const label = states.map((state, index) => `${clauses[index]}${state ? '成立' : '不成立'}`).join('，');
+    cases.push(makeCase(fact, startIndex + cases.length, {
+      title: `条件组合：${label}`,
+      type: 'functional',
+      priority: 'high',
+      preconditions: `准备满足条件可独立控制的测试对象；原文条件关系为${operator === 'and' ? '全部满足（AND）' : '至少一项满足（OR）'}`,
+      steps: [...clauses.map((clause, index) => `设置条件「${clause}」为${states[index] ? '成立' : '不成立'}`), '触发该条件对应的业务操作并检查执行记录或页面结果'],
+      expectedResults: [shouldRun ? `条件组合满足后执行「${action}」` : `条件组合不满足后不执行「${action}」`],
+      scenarioType: 'condition_matrix'
+    }));
+  }
+  return cases;
+}
+
+function dataSourceCases(fact, startIndex) {
+  const statement = fact.statement;
+  const sources = [...new Set((fact.values || []).map((value) => String(value).trim()).filter(Boolean))];
+  if (!/(?:数据源|來源|来源)/.test(`${fact.field} ${statement}`) || !/(?:切换|选择|指定|使用)/.test(statement) || sources.length < 2) return [];
+  return sources.map((source, index) => makeCase(fact, startIndex + index, {
+    title: `切换后使用数据源「${source}」`,
+    type: 'functional',
+    priority: 'high',
+    preconditions: `准备可分别访问的已声明数据源：${sources.map((item) => `「${item}」`).join('、')}`,
+    steps: [`将数据源切换为「${source}」`, '发起一次读取并检查请求来源或返回数据标记'],
+    expectedResults: [`读取使用已选择的数据源「${source}」`],
+    scenarioType: 'source_selection'
+  }));
 }
 
 function reversibleStateCases(fact, startIndex) {
@@ -406,6 +484,8 @@ function featureCase(fact, index) {
 
 function casesForFact(fact, startIndex) {
   const reusable = [
+    ...conditionMatrixCases(fact, startIndex),
+    ...dataSourceCases(fact, startIndex),
     ...scheduledActionCases(fact, startIndex),
     ...sharedStateCases(fact, startIndex),
     ...accountScopeCases(fact, startIndex),
@@ -463,6 +543,8 @@ function ruleTestPoint(fact, conflictIds = []) {
     rule_version: RULE_ENGINE_VERSION,
     title: fact.statement,
     description: `基于明确规则“${fact.statement}”进行规则测试`,
+    scenario_group: scenarioGroup(fact),
+    scenario_type: conflictIds.length ? 'conflict' : (['min', 'max', 'range'].includes(fact.rule_type) ? 'boundary' : fact.rule_type === 'transition' ? 'transition' : 'functional'),
     type: operatorTypes[fact.rule_type] || 'functional',
     priority: 'high',
     trace: fact.trace,
@@ -478,6 +560,8 @@ function testPointForFeature(fact, conflictIds = []) {
     rule_version: RULE_ENGINE_VERSION,
     title: fact.statement,
     description: `基于可追溯事实“${fact.statement}”设计验证`,
+    scenario_group: scenarioGroup(fact),
+    scenario_type: conflictIds.length ? 'conflict' : 'functional',
     type: 'functional',
     priority: 'high',
     trace: fact.trace,
